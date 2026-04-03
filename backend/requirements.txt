@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+ultralytics
+cloudinary
+motor
+python-multipart
+pydantic-settings
+python-dotenv
+opencv-python-headless
