@@ -1,18 +1,32 @@
 import { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, useMap, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import 'leaflet.heat';
+import { formatDistanceToNow } from 'date-fns';
 
-// Define MongoDB Schema Mock
+// Create custom marker icon for potholes
+const potholeIcon = new L.Icon({
+    iconUrl: 'https://cdn-icons-png.flaticon.com/512/684/684908.png',
+    iconSize: [32, 32],
+    iconAnchor: [16, 32],
+    popupAnchor: [0, -32]
+});
+
+// Define MongoDB Schema from Backend
+interface Detection {
+  bbox: number[];
+  confidence: number;
+}
+
 interface MongoPothole {
   _id: string;
-  lat: number;
-  lng: number;
-  city: string;
-  location: string;
-  severity: 'Critical' | 'High' | 'Medium' | 'Low';
-  timestamp: string; // ISO String
+  image_url: string;
+  latitude: number;
+  longitude: number;
+  severity: 'Critical' | 'High' | 'Normal';
+  timestamp: string;
+  detections: Detection[];
 }
 
 // React Leaflet Wrapper for leaflet.heat
@@ -43,29 +57,27 @@ function HeatmapLayer({ points }: { points: [number, number, number][] }) {
 export default function MapPage() {
   const [potholes, setPotholes] = useState<MongoPothole[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Simulate Asynchronous MongoDB Data Fetch
-    const fetchMongoData = async () => {
+    const fetchData = async () => {
       setLoading(true);
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      const mockDatabase: MongoPothole[] = [
-        { _id: '64a1b', lat: 19.0760, lng: 72.8777, city: 'Mumbai', location: 'Andheri West Link Road', severity: 'Critical', timestamp: new Date(Date.now() - 5 * 60000).toISOString() },
-        { _id: '64a1c', lat: 19.1025, lng: 72.8453, city: 'Mumbai', location: 'JVLR Junction', severity: 'High', timestamp: new Date(Date.now() - 25 * 60000).toISOString() },
-        { _id: '64a1d', lat: 28.7041, lng: 77.1025, city: 'New Delhi', location: 'Connaught Place', severity: 'Medium', timestamp: new Date(Date.now() - 45 * 60000).toISOString() },
-        { _id: '64a1e', lat: 28.6139, lng: 77.2090, city: 'New Delhi', location: 'India Gate Circle', severity: 'Critical', timestamp: new Date(Date.now() - 115 * 60000).toISOString() },
-        { _id: '64a1f', lat: 12.9716, lng: 77.5946, city: 'Bangalore', location: 'Outer Ring Road (Bellandur)', severity: 'Critical', timestamp: new Date(Date.now() - 150 * 60000).toISOString() },
-        { _id: '64a20', lat: 12.9352, lng: 77.6245, city: 'Bangalore', location: 'Koramangala 100ft Road', severity: 'High', timestamp: new Date(Date.now() - 190 * 60000).toISOString() },
-        { _id: '64a21', lat: 13.0827, lng: 80.2707, city: 'Chennai', location: 'Marina Beach Road', severity: 'Low', timestamp: new Date(Date.now() - 300 * 60000).toISOString() },
-        { _id: '64a22', lat: 19.0222, lng: 72.8561, city: 'Mumbai', location: 'Dadar TT Circle', severity: 'Critical', timestamp: new Date(Date.now() - 360 * 60000).toISOString() },
-      ];
-      
-      setPotholes(mockDatabase);
-      setLoading(false);
+      try {
+        const response = await fetch("http://localhost:8000/api/v1/potholes?limit=50");
+        if (!response.ok) throw new Error("Faulty connection to Infrastructure Grid.");
+        
+        const result = await response.json();
+        if (result.success) {
+          setPotholes(result.data);
+        }
+      } catch (err: any) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
     };
 
-    fetchMongoData();
+    fetchData();
   }, []);
 
   // Format the heatmap points matrix [lat, lng, intensity]
@@ -73,82 +85,110 @@ export default function MapPage() {
     let intensity = 0.5;
     if (p.severity === 'Critical') intensity = 1.0;
     if (p.severity === 'High') intensity = 0.8;
-    return [p.lat, p.lng, intensity * 50];
+    return [p.latitude, p.longitude, intensity * 50];
   });
 
   const getSeverityStyle = (sev: string) => {
     switch(sev) {
       case 'Critical': return 'text-[#ffb4ab] border-[#ffb4ab]/30 bg-[#93000a]/20';
       case 'High': return 'text-primary border-primary/30 bg-primary/20';
-      default: return 'text-on-surface-variant border-on-surface-variant/30 bg-surface-variant/50';
+      default: return 'text-emerald-400 border-emerald-400/30 bg-emerald-400/10';
     }
   };
 
-  const getRelativeTime = (isoString: string) => {
-    const diff = Math.floor((Date.now() - new Date(isoString).getTime()) / 60000);
-    if (diff < 60) return `${diff} mins ago`;
-    const hours = Math.floor(diff / 60);
-    return `${hours} hour${hours > 1 ? 's' : ''} ago`;
-  };
-
-  // Truncate feed to 4 items on mobile
-  const displayedPotholes = (window.innerWidth < 768) ? potholes.slice(0, 4) : potholes;
-
   return (
-    <main className="md:h-[calc(100vh-72px)] flex flex-col bg-[#08080A] md:overflow-hidden">
+    <main className="md:h-[calc(100vh-72px)] flex flex-col bg-[#08080A] md:overflow-hidden pt-20">
       {/* Live Feed Header Grid Section */}
-      <div className="px-8 py-3 bg-surface z-10 border-b border-outline-variant/10 shadow-xl flex justify-between items-center shrink-0">
+      <div className="px-8 py-4 bg-surface z-10 border-b border-outline-variant/10 shadow-xl flex justify-between items-center shrink-0">
         <div>
-          <h1 className="text-xl font-headline font-bold mb-0.5">Live Infrastructure Grid</h1>
-          <p className="text-on-surface-variant text-[10px] uppercase tracking-widest font-bold opacity-60">National Monitoring Node — INDIA</p>
+          <h1 className="text-xl font-headline font-bold mb-0.5 text-[#E5E1E4]">Infrastructure Intelligence Grid</h1>
+          <p className="text-on-surface-variant text-[10px] uppercase tracking-widest font-bold opacity-60">Active Monitoring Nodes — Global Stream</p>
         </div>
-        {!loading && (
-          <div className="flex items-center text-emerald-400 text-[10px] font-bold tracking-widest bg-emerald-400/5 px-3 py-1.5 rounded-full border border-emerald-400/20">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse mr-2"></div>
-            LIVE FEED ACTIVE
+        {!loading && !error && (
+          <div className="flex items-center text-primary text-[10px] font-bold tracking-widest bg-primary/5 px-3 py-1.5 rounded-full border border-primary/20">
+            <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse mr-2"></div>
+            SYNCED WITH MONGODB
           </div>
         )}
       </div>
       
-      {/* Container containing two divs: i) Map div ii) Recent (flex-row on desktop) */}
       <div className="flex-1 flex flex-col md:flex-row relative z-0 md:min-h-0">
         
-        {/* i) Map Div - High-end Immersive Frame */}
-        <div className="w-full h-[400px] md:h-full md:flex-1 relative border-b md:border-b-0 md:border-r border-outline-variant/10 bg-[#08080A]">
-          <MapContainer center={[20.5937, 78.9629]} zoom={5} className="w-full h-full absolute inset-0 bg-[#08080A]">
+        {/* Map Div */}
+        <div className="w-full h-[50vh] md:h-full md:flex-1 relative border-b md:border-b-0 md:border-r border-outline-variant/10 bg-[#08080A]">
+          <MapContainer center={[26.4499, 80.3319]} zoom={13} className="w-full h-full absolute inset-0 bg-[#08080A]">
             <TileLayer
               attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
               url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
             />
             {!loading && <HeatmapLayer points={heatPoints} />}
+            
+            {potholes.map(p => (
+              <Marker key={p._id} position={[p.latitude, p.longitude]} icon={potholeIcon}>
+                <Popup className="custom-popup">
+                  <div className="p-2 space-y-2">
+                    <img src={p.image_url} alt="Detection" className="w-full h-24 object-cover rounded shadow" />
+                    <p className="text-xs font-bold text-primary">{p.severity} Severity</p>
+                    <p className="text-[10px] text-gray-500">{new Date(p.timestamp).toLocaleString()}</p>
+                  </div>
+                </Popup>
+              </Marker>
+            ))}
           </MapContainer>
         </div>
         
-        {/* ii) Recent Potholes Section - Balanced Sidebar */}
-        <div className="w-full md:w-[380px] bg-[#0c0c0e] flex flex-col md:overflow-y-auto">
+        {/* Sidebar Feed */}
+        <div className="w-full md:w-[400px] bg-[#0c0c0e] flex flex-col md:overflow-y-auto">
           <div className="p-5 border-b border-outline-variant/5 sticky top-0 bg-[#0c0c0e]/95 backdrop-blur-md z-10 shrink-0">
             <h3 className="font-headline font-bold text-lg text-[#E5E1E4] flex items-center gap-2">
-              <span className="material-symbols-outlined text-primary text-xl">history</span>
-              Recent Detections
+              <span className="material-symbols-outlined text-primary text-xl">database</span>
+              Neural Log Registry
             </h3>
           </div>
           
           <div className="p-4 space-y-3">
             {loading ? (
-              [1,2,3].map(i => <div key={i} className="animate-pulse bg-surface-container-low rounded-xl h-24"></div>)
+              [1,2,3,4].map(i => <div key={i} className="animate-pulse bg-surface-container-low rounded-xl h-24"></div>)
+            ) : error ? (
+              <div className="p-8 text-center text-error space-y-2">
+                <span className="material-symbols-outlined text-4xl">cloud_off</span>
+                <p className="text-xs font-bold uppercase tracking-widest">{error}</p>
+              </div>
             ) : (
-              displayedPotholes.map(pothole => (
-                <div key={pothole._id} className="glass-panel p-4 rounded-xl border border-outline-variant/10 hover:border-primary/30 transition-all cursor-pointer group">
-                  <div className="flex justify-between items-start mb-2">
-                    <span className={`text-[9px] uppercase tracking-tighter font-bold px-1.5 py-0.5 rounded-sm border ${getSeverityStyle(pothole.severity)}`}>
-                      {pothole.severity}
-                    </span>
-                    <span className="text-[10px] text-on-surface-variant/70 italic">{getRelativeTime(pothole.timestamp)}</span>
+              potholes.map(p => (
+                <div key={p._id} className="glass-panel p-3 rounded-xl border border-outline-variant/10 hover:border-primary/40 transition-all cursor-pointer group flex gap-4">
+                  <div className="w-20 h-20 rounded-lg overflow-hidden shrink-0 border border-outline-variant/20 shadow-inner">
+                    <img src={p.image_url} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" alt="Pothole" />
                   </div>
-                  <h4 className="font-headline font-bold text-[#E5E1E4] text-sm mb-1">{pothole.location}</h4>
-                  <div className="text-[10px] text-on-surface-variant">[{pothole.lat.toFixed(2)}, {pothole.lng.toFixed(2)}] &middot; {pothole.city}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-start mb-1">
+                      <span className={`text-[8px] uppercase tracking-tighter font-bold px-1.5 py-0.5 rounded-sm border ${getSeverityStyle(p.severity)}`}>
+                        {p.severity}
+                      </span>
+                      <span className="text-[9px] text-on-surface-variant/70">
+                        {formatDistanceToNow(new Date(p.timestamp), { addSuffix: true })}
+                      </span>
+                    </div>
+                    <h4 className="font-headline font-bold text-[#E5E1E4] text-xs truncate">Geospatial Token: {p._id.slice(-6).toUpperCase()}</h4>
+                    <div className="text-[10px] text-on-surface-variant flex items-center gap-1 mt-1 font-mono">
+                      <span className="material-symbols-outlined text-[12px]">location_on</span>
+                      {p.latitude.toFixed(4)}, {p.longitude.toFixed(4)}
+                    </div>
+                    <div className="mt-2 flex gap-1">
+                      {p.detections.map((_, i) => (
+                        <div key={i} className="w-1.5 h-1.5 rounded-full bg-primary/40"></div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               ))
+            )}
+            
+            {!loading && potholes.length === 0 && !error && (
+              <div className="p-12 text-center text-on-surface-variant/50 space-y-2">
+                <span className="material-symbols-outlined text-4xl">info</span>
+                <p className="text-xs">No hazards logged in the current grid.</p>
+              </div>
             )}
           </div>
         </div>
