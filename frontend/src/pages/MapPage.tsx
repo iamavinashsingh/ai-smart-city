@@ -63,7 +63,7 @@ export default function MapPage() {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const response = await fetch("http://localhost:8000/api/v1/potholes?limit=50");
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/potholes?limit=50`);
         if (!response.ok) throw new Error("Faulty connection to Infrastructure Grid.");
         
         const result = await response.json();

@@ -73,7 +73,7 @@ export default function ScanRoad() {
 
     try {
       // Assuming backend is on port 8000 during dev
-      const response = await fetch("http://localhost:8000/api/v1/detect", {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/detect`, {
         method: "POST",
         body: formData,
       });
@@ -91,7 +91,7 @@ export default function ScanRoad() {
 
   // 3. Logic - Drawing: Render bounding boxes over the image on canvas
   useEffect(() => {
-    if (result && preview && canvasRef.current) {
+    if (preview && canvasRef.current) {
       const canvas = canvasRef.current;
       const ctx = canvas.getContext("2d");
       const img = new Image();
@@ -104,8 +104,8 @@ export default function ScanRoad() {
         
         ctx?.drawImage(img, 0, 0);
         
-        // Draw boxes
-        if (ctx) {
+        // Draw boxes only if result exists
+        if (ctx && result) {
           ctx.strokeStyle = "#ffb4ab"; // Reddish-pink for visibility
           ctx.lineWidth = Math.max(img.width / 100, 4);
           ctx.font = `${Math.max(img.width / 40, 16)}px Courier New`;
