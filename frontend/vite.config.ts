@@ -1,9 +1,29 @@
 import path from "path"
 import react from "@vitejs/plugin-react"
-import { defineConfig } from "vite"
+import { defineConfig, type Plugin } from "vite"
+
+/**
+ * leaflet.heat is a plain global script — it does `L.heatLayer = ...`
+ * expecting `L` to be window.L.  Inside Vite's ESM bundle `L` is only a
+ * local module variable, so we must inject `import L from 'leaflet'`
+ * into leaflet.heat's source BEFORE the bundler sees it.
+ */
+function leafletHeatFix(): Plugin {
+  return {
+    name: "leaflet-heat-fix",
+    transform(code, id) {
+      if (id.includes("leaflet.heat")) {
+        return {
+          code: `import L from 'leaflet';\n${code}`,
+          map: null,
+        };
+      }
+    },
+  };
+}
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), leafletHeatFix()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

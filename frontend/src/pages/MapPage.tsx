@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { MapContainer, TileLayer, useMap, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import "@/lib/leaflet-heat";
+import "leaflet.heat";
 import { formatDistanceToNow } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 
