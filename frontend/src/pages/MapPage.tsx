@@ -14,12 +14,23 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
-const potholeIcon = new L.Icon({
-  iconUrl: "https://cdn-icons-png.flaticon.com/512/684/684908.png",
-  iconSize: [28, 28],
-  iconAnchor: [14, 28],
-  popupAnchor: [0, -28],
-});
+const getMarkerIcon = (severity: string) => {
+  let color = "#ef4444"; // Default to red
+  if (/critical|high/i.test(severity)) color = "#ef4444"; // Red
+  else if (/medium/i.test(severity)) color = "#eab308"; // Yellow
+  else if (/low/i.test(severity)) color = "#9ca3af"; // Gray
+  else if (/normal/i.test(severity)) color = "#22c55e"; // Green
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32" height="32"><path fill="${color}" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/><circle fill="${color === '#eab308' || color === '#22c55e' ? 'black' : 'white'}" cx="12" cy="9" r="2.5"/></svg>`;
+
+  return L.divIcon({
+    className: "custom-svg-icon",
+    html: svg,
+    iconSize: [32, 32],
+    iconAnchor: [16, 32],
+    popupAnchor: [0, -32]
+  });
+};
 
 interface Detection {
   bbox: number[];
@@ -31,7 +42,7 @@ interface MongoPothole {
   image_url: string;
   latitude: number;
   longitude: number;
-  severity: "Critical" | "High" | "Normal";
+  severity: string;
   timestamp: string;
   detections: Detection[];
 }
@@ -51,15 +62,29 @@ function HeatmapLayer({ points }: { points: [number, number, number][] }) {
 }
 
 function getSeverityStyle(sev: string) {
-  switch (sev) {
-    case "Critical": return { text: "text-[#ffb4ab]", border: "border-[#ffb4ab]/30", bg: "bg-[#93000a]/20", dot: "bg-[#ffb4ab]" };
-    case "High":     return { text: "text-primary", border: "border-primary/30", bg: "bg-primary/20", dot: "bg-primary" };
-    default:         return { text: "text-emerald-400", border: "border-emerald-400/30", bg: "bg-emerald-400/10", dot: "bg-emerald-400" };
+  if (/critical|high/i.test(sev)) {
+    return { text: "text-red-500", border: "border-red-500/30", bg: "bg-red-500/10", dot: "bg-red-500" };
+  } else if (/medium/i.test(sev)) {
+    return { text: "text-yellow-500", border: "border-yellow-500/30", bg: "bg-yellow-500/10", dot: "bg-yellow-500" };
+  } else if (/low/i.test(sev)) {
+    return { text: "text-gray-400", border: "border-gray-400/30", bg: "bg-gray-400/10", dot: "bg-gray-400" };
+  } else {
+    return { text: "text-green-500", border: "border-green-500/30", bg: "bg-green-500/10", dot: "bg-green-500" };
   }
 }
 
 const formatDateIST = (dateStr: string) => {
-  const date = new Date(dateStr);
+  // Ensure the date is interpreted as UTC by appending 'Z' if it's missing
+  // standard ISO formatting properties.
+  let parseableStr = dateStr;
+  if (!parseableStr.endsWith("Z") && !parseableStr.includes("+")) {
+    parseableStr = parseableStr.replace(" ", "T");
+    if (!parseableStr.includes("Z")) {
+      parseableStr += "Z";
+    }
+  }
+
+  const date = new Date(parseableStr);
   const timeStr = new Intl.DateTimeFormat("en-IN", {
     timeZone: "Asia/Kolkata",
     hour: "2-digit",
@@ -89,7 +114,7 @@ function MapSyncHandler({ selected, potholes }: { selected: string | null, potho
 
 function PotholeMarker({ p, isSelected }: { p: MongoPothole, isSelected: boolean }) {
   const markerRef = useRef<L.Marker>(null);
-  
+
   useEffect(() => {
     if (isSelected && markerRef.current) {
       markerRef.current.openPopup();
@@ -97,7 +122,7 @@ function PotholeMarker({ p, isSelected }: { p: MongoPothole, isSelected: boolean
   }, [isSelected]);
 
   return (
-    <Marker ref={markerRef} position={[p.latitude, p.longitude]} icon={potholeIcon}>
+    <Marker ref={markerRef} position={[p.latitude, p.longitude]} icon={getMarkerIcon(p.severity)}>
       <Popup className="custom-popup">
         <div className="p-1 space-y-2 min-w-[140px]">
           <img src={p.image_url} alt="Detection" className="w-full h-20 object-cover rounded-lg shadow" loading="lazy" />
@@ -138,11 +163,12 @@ export default function MapPage() {
   const heatPoints: [number, number, number][] = potholes.map((p) => [
     p.latitude,
     p.longitude,
-    p.severity === "Critical" ? 50 : p.severity === "High" ? 35 : 20,
+    /critical|high/i.test(p.severity) ? 50 : /medium/i.test(p.severity) ? 35 : /low/i.test(p.severity) ? 25 : 15,
   ]);
 
-  const criticalCount = potholes.filter((p) => p.severity === "Critical").length;
-  const highCount = potholes.filter((p) => p.severity === "High").length;
+  const highCount = potholes.filter((p) => /critical|high/i.test(p.severity)).length;
+  const mediumCount = potholes.filter((p) => /medium/i.test(p.severity)).length;
+  const lowCount = potholes.filter((p) => /low/i.test(p.severity)).length;
 
   const handleLogClick = (p: MongoPothole) => {
     setSelected(p._id);
@@ -167,20 +193,26 @@ export default function MapPage() {
           {/* Stats pills */}
           {!loading && !error && (
             <>
-              {criticalCount > 0 && (
-                <div className="flex items-center gap-1.5 text-[10px] font-bold text-[#ffb4ab] bg-[#93000a]/20 border border-[#ffb4ab]/20 px-2.5 py-1 rounded-full">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#ffb4ab]" />
-                  {criticalCount} Critical
-                </div>
-              )}
               {highCount > 0 && (
-                <div className="flex items-center gap-1.5 text-[10px] font-bold text-primary bg-primary/10 border border-primary/20 px-2.5 py-1 rounded-full">
-                  <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-red-500 bg-red-500/10 border border-red-500/20 px-2.5 py-1 rounded-full">
+                  <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
                   {highCount} High
                 </div>
               )}
-              <div className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 px-2.5 py-1 rounded-full">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              {mediumCount > 0 && (
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 px-2.5 py-1 rounded-full">
+                  <span className="w-1.5 h-1.5 rounded-full bg-yellow-500" />
+                  {mediumCount} Medium
+                </div>
+              )}
+              {lowCount > 0 && (
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-gray-400 bg-gray-400/10 border border-gray-400/20 px-2.5 py-1 rounded-full">
+                  <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+                  {lowCount} Low
+                </div>
+              )}
+              <div className="flex items-center gap-1.5 text-[10px] font-bold text-green-500 bg-green-500/10 border border-green-500/20 px-2.5 py-1 rounded-full">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
                 {potholes.length} Total Logged
               </div>
             </>
@@ -286,9 +318,8 @@ export default function MapPage() {
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.4, delay: Math.min(i * 0.05, 0.3) }}
                       onClick={() => handleLogClick(p)}
-                      className={`glass-panel p-3 rounded-2xl border transition-all cursor-pointer group flex gap-3 relative ${
-                        isSelected ? `${s.border} ${s.bg}` : "border-outline-variant/10 hover:border-primary/30"
-                      }`}
+                      className={`glass-panel p-3 rounded-2xl border transition-all cursor-pointer group flex gap-3 relative ${isSelected ? `${s.border} ${s.bg}` : "border-outline-variant/10 hover:border-primary/30"
+                        }`}
                     >
                       {/* Active Indicator Line */}
                       {isSelected && (
@@ -358,7 +389,7 @@ export default function MapPage() {
               onClick={(e) => e.stopPropagation()} // stop close on inner click
             >
               {/* Close Button */}
-              <button 
+              <button
                 className="absolute top-4 right-4 z-50 w-10 h-10 rounded-full bg-black/40 hover:bg-black/60 border border-white/10 flex items-center justify-center text-white backdrop-blur-md transition-all"
                 onClick={() => {
                   setModalPothole(null);
@@ -369,15 +400,15 @@ export default function MapPage() {
               </button>
 
               {/* Image Section */}
-              <div 
+              <div
                 className="w-full md:w-[60%] lg:w-[65%] h-[40vh] md:h-[70vh] bg-black relative cursor-zoom-in overflow-hidden group"
                 onClick={() => setIsZoomed(!isZoomed)}
               >
-                <motion.img 
+                <motion.img
                   animate={{ scale: isZoomed ? 1.5 : 1 }}
                   transition={{ type: "tween", duration: 0.4 }}
-                  src={modalPothole.image_url} 
-                  alt="Pothole" 
+                  src={modalPothole.image_url}
+                  alt="Pothole"
                   className={`w-full h-full object-contain ${isZoomed ? 'cursor-zoom-out' : 'cursor-zoom-in'}`}
                 />
                 {!isZoomed && (

@@ -55,15 +55,15 @@ export default function ScanRoad() {
           const [x1, y1, x2, y2] = det.bbox;
           const w = x2 - x1;
           const h = y2 - y1;
-          ctx.strokeStyle = "#ffb4ab";
+          ctx.strokeStyle = "#ef4444";
           ctx.lineWidth = Math.max(img.width / 100, 3);
           ctx.strokeRect(x1, y1, w, h);
           const label = `${(det.confidence * 100).toFixed(1)}%`;
           ctx.font = `bold ${Math.max(img.width / 45, 14)}px Inter`;
           const textW = ctx.measureText(label).width;
-          ctx.fillStyle = "rgba(147, 0, 10, 0.85)";
+          ctx.fillStyle = "rgba(239, 68, 68, 0.9)";
           ctx.fillRect(x1, y1 - 26, textW + 12, 26);
-          ctx.fillStyle = "#ffdad6";
+          ctx.fillStyle = "#ffffff";
           ctx.fillText(label, x1 + 6, y1 - 7);
         });
       }
@@ -136,12 +136,25 @@ export default function ScanRoad() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const severityClass =
-    result && result.detections.length > 3
-      ? "text-[#ffb4ab] border-[#ffb4ab]/30 bg-[#93000a]/20"
-      : result && result.detections.length > 0
-      ? "text-primary border-primary/30 bg-primary/10"
-      : "text-emerald-400 border-emerald-400/30 bg-emerald-400/10";
+  let severityClass = "text-green-500 border-green-500/30 bg-green-500/10";
+  let severityText = "Normal (Road Clear)";
+  let severityIcon = "check_circle";
+
+  if (result) {
+    if (result.detections.length > 3) {
+      severityClass = "text-red-500 border-red-500/30 bg-red-500/10";
+      severityText = "High Severity";
+      severityIcon = "warning";
+    } else if (result.detections.length >= 2) {
+      severityClass = "text-yellow-500 border-yellow-500/30 bg-yellow-500/10";
+      severityText = "Medium Severity";
+      severityIcon = "warning";
+    } else if (result.detections.length === 1) {
+      severityClass = "text-gray-400 border-gray-400/30 bg-gray-400/10";
+      severityText = "Low Severity";
+      severityIcon = "warning";
+    }
+  }
 
   return (
     <main className="min-h-screen bg-[#0D0D0F] pt-28 px-6 pb-20 relative overflow-hidden">
@@ -281,9 +294,9 @@ export default function ScanRoad() {
                     {/* Severity badge */}
                     <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-[10px] font-bold uppercase tracking-widest ${severityClass}`}>
                       <span className="material-symbols-outlined text-sm" style={{ fontVariationSettings: "'FILL' 1" }}>
-                        {result.detections.length > 0 ? "warning" : "check_circle"}
+                        {severityIcon}
                       </span>
-                      {result.detections.length > 3 ? "Critical Severity" : result.detections.length > 0 ? "High Severity" : "Road Clear"}
+                      {severityText}
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
