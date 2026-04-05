@@ -1,5 +1,8 @@
 # AI-Smart City: Real-Time Crowdsourced Road Surface Monitoring
 
+# [LIVE DEMO](https://ai-smart-city-sigma.vercel.app/)
+
+
 ![Project Banner](./assets/banner.png)
 
 ## 🌟 Mission & Civic Impact

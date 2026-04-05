@@ -15,6 +15,7 @@ async def detect_pothole(
     longitude: float = Form(...)
 ):
     """The core operational pipeline for raw AI inference and compression."""
+    print(f"DEBUG: Starting detection for ({latitude}, {longitude})")
     
     # 1. Validation (Check image type)
     if not image.content_type.startswith("image/"):
@@ -24,13 +25,15 @@ async def detect_pothole(
 
     # 2. Sequential/Parallel Pipeline
     try:
-        # Step A: Raw AI Inference (YOLO is most CPU-bound)
-        detections_raw = await ai_service.run_inference(image_bytes)
-        
         # Step B: CDN Compression & Storage (Simultaneously streaming to Cloudinary)
         # We use a human-readable timestamp for filename
+        print(f"DEBUG: Running inference...")
+        detections_raw = await ai_service.run_inference(image_bytes)
+        
+        print(f"DEBUG: Uploading to Cloudinary...")
         filename = datetime.now().strftime("%Y%m%d_%H%M%S")
         image_url = await storage_service.upload_image(image_bytes, filename)
+        print(f"DEBUG: Image uploaded: {image_url}")
         
         # 3. Aggregation & Formating
         detections = [
@@ -45,13 +48,21 @@ async def detect_pothole(
             severity = "High"
 
         # 4. NoSQL Logging (MongoDB)
+        print(f"DEBUG: Logging to MongoDB...")
+        # Compatibility fix for Pydantic v1/v2
+        serialized_detections = [
+            d.model_dump() if hasattr(d, "model_dump") else d.dict() 
+            for d in detections
+        ]
+        
         await db_service.log_detection(
             image_url=image_url,
             latitude=latitude,
             longitude=longitude,
-            detections=[d.model_dump() for d in detections],
+            detections=serialized_detections,
             severity=severity
         )
+        print(f"DEBUG: Successfully logged to DB")
 
         # 5. Client Response
         return DetectionResponse(
@@ -63,7 +74,10 @@ async def detect_pothole(
             location={"lat": latitude, "lng": longitude}
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"CRITICAL ERROR: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 @router.get("/potholes")
 async def get_records(limit: int = 50):
