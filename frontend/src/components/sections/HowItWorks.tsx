@@ -29,7 +29,7 @@ export default function HowItWorks() {
               <span className="material-symbols-outlined text-primary text-3xl">psychology</span>
             </div>
             <h3 className="text-xl font-headline font-bold mb-3">3. AI Detection</h3>
-            <p className="text-on-surface-variant text-sm px-4">YOLOv12 models scan for potholes with 99.8% precision.</p>
+            <p className="text-on-surface-variant text-sm px-4">YOLOv12 models scan for potholes with precision.</p>
           </div>
           {/* Step 4 */}
           <div className="relative z-10 text-center group">
