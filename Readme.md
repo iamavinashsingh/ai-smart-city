@@ -61,7 +61,7 @@ sequenceDiagram
 ## ⚡ High-Tech Stack & Performance
 
 ### **Machine Learning (YOLOv12)**
-We use the state-of-the-art **YOLOv12** architecture. The model is loaded as a **Singleton** during the FastAPI lifespan to eliminate cold-start latency. 
+We use a **fine-tuned YOLOv12S** model (62.2% mAP50) trained on the Roboflow `new-pothole-detection` dataset. The model is loaded as a **Singleton** during the FastAPI lifespan with a runtime compatibility patch for the `sunsmarterjie/yolov12` fork.
 
 ### **Inference Strategy: Thread-Pooling**
 AI inference is CPU-bound. To keep the server responsive for multiple users, we use `asyncio.to_thread` to push detection tasks to background workers.
@@ -81,7 +81,7 @@ ai-pothole/
 ├── backend/                   # FastAPI Inference Engine (Micro-Layered)
 │   ├── .env                   # Infrastructure Secrets (CDN/DB)
 │   ├── requirements.txt       # AI/Web Dependencies
-│   ├── yolov12l.pt            # Pre-trained Weights
+│   ├── best.pt                # Fine-tuned YOLOv12S Pothole Weights
 │   └── app/
 │       ├── main.py            # Entry point & Lifespan logic
 │       ├── api/routes.py      # Traffic Controller

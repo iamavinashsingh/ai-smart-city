@@ -13,7 +13,9 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     # ── AI Model ──────────────────────────────────────────────────────────────
-    MODEL_PATH: str = "yolov12l.pt"
+    # 'best.pt' = your fine-tuned YOLOv12s model (62.2% mAP50 on pothole data)
+    # trained via sunsmarterjie/yolov12 fork on Roboflow new-pothole-detection v2
+    MODEL_PATH: str = "best.pt"
     CONFIDENCE_THRESHOLD: float = 0.25
     MAX_IMAGE_SIZE_MB: int = 10  # reject payloads bigger than this
 

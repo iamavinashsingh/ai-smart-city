@@ -20,7 +20,7 @@ The backend is designed as a **High-Fidelity AI Inference Engine**. It processes
 backend/
 ├── .env                        # Critical: Environment secrets (Cloudinary, Mongo)
 ├── requirements.txt            # System dependencies (Fastapi, Ultralytics, Motor)
-├── yolov12l.pt                 # Pre-trained YOLOv12 Weight File
+├── best.pt                     # Fine-tuned YOLOv12S Pothole Model (62.2% mAP50)
 │
 └── app/                        # Main Application Container
     ├── main.py                 # Entry point with Lifespan & Singleton loading
@@ -45,7 +45,7 @@ backend/
 ## ⚡ Engineering Strategies
 
 ### 1. Singleton Model Loading (Lifespan Context)
-YOLOv12 is heavy (~50MB+ weights). Loading it on every request would cause massive latency. We use the **FastAPI Lifespan** event to load the model into RAM exactly once when the server boots.
+The fine-tuned YOLOv12S model is loaded once at startup using **FastAPI Lifespan** to avoid per-request cold-starts. A runtime compatibility patch bridges the original `sunsmarterjie/yolov12` fork weights with the latest Ultralytics engine.
 
 ### 2. Async Non-Blocking Execution
 Since YOLO inference is a CPU-bound task, it would ordinarily "block" our async server. We use `asyncio.to_thread` to push these heavy computations to a background executor, allowing the server to handle multiple uploads concurrently.
