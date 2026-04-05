@@ -1,5 +1,12 @@
 import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
+import { motion } from "framer-motion";
+
+const stats = [
+  { value: "50+", label: "Cities Live" },
+  { value: "<500ms", label: "Inference" },
+  { value: "99.9%", label: "Uptime" },
+];
 
 export default function Hero() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -7,24 +14,18 @@ export default function Hero() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    
+
     let particles: Particle[] = [];
-    const particleCount = 100;
-    const mouse = { x: 0, y: 0, radius: 150 };
+    const particleCount = 80;
+    const mouse = { x: -500, y: -500, radius: 120 };
+    let animationFrameId: number;
 
     const handleMouseMove = (e: MouseEvent) => {
       mouse.x = e.clientX;
       mouse.y = e.clientY;
     };
-
-    const handleResize = () => {
-      resizeCanvas();
-    };
-
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('resize', handleResize);
 
     function resizeCanvas() {
       if (!canvas) return;
@@ -34,22 +35,18 @@ export default function Hero() {
     }
 
     class Particle {
-      x: number;
-      y: number;
-      size: number;
-      baseX: number;
-      baseY: number;
-      density: number;
-      opacity: number;
+      x: number; y: number; size: number;
+      baseX: number; baseY: number;
+      density: number; opacity: number;
 
       constructor() {
         this.x = Math.random() * (canvas?.width || window.innerWidth);
         this.y = Math.random() * (canvas?.height || window.innerHeight);
-        this.size = Math.random() * 2 + 1;
+        this.size = Math.random() * 1.5 + 0.5;
         this.baseX = this.x;
         this.baseY = this.y;
-        this.density = (Math.random() * 30) + 1;
-        this.opacity = Math.random() * 0.5 + 0.2;
+        this.density = Math.random() * 25 + 5;
+        this.opacity = Math.random() * 0.4 + 0.1;
       }
 
       draw() {
@@ -57,56 +54,39 @@ export default function Hero() {
         ctx.fillStyle = `rgba(214, 186, 255, ${this.opacity})`;
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-        ctx.closePath();
         ctx.fill();
       }
 
       update() {
-        let dx = mouse.x - this.x;
-        let dy = mouse.y - this.y;
-        let distance = Math.sqrt(dx * dx + dy * dy);
-        let forceDirectionX = dx / distance;
-        let forceDirectionY = dy / distance;
-        let force = (mouse.radius - distance) / mouse.radius;
-        let directionX = forceDirectionX * force * this.density;
-        let directionY = forceDirectionY * force * this.density;
+        const dx = mouse.x - this.x;
+        const dy = mouse.y - this.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
 
         if (distance < mouse.radius) {
-          this.x -= directionX;
-          this.y -= directionY;
+          const force = (mouse.radius - distance) / mouse.radius;
+          this.x -= (dx / distance) * force * this.density;
+          this.y -= (dy / distance) * force * this.density;
         } else {
-          if (this.x !== this.baseX) {
-            let dx = this.x - this.baseX;
-            this.x -= dx / 10;
-          }
-          if (this.y !== this.baseY) {
-            let dy = this.y - this.baseY;
-            this.y -= dy / 10;
-          }
+          if (this.x !== this.baseX) this.x -= (this.x - this.baseX) / 12;
+          if (this.y !== this.baseY) this.y -= (this.y - this.baseY) / 12;
         }
       }
     }
 
     function initParticles() {
-      particles = [];
-      for (let i = 0; i < particleCount; i++) {
-        particles.push(new Particle());
-      }
+      particles = Array.from({ length: particleCount }, () => new Particle());
     }
 
     function connect() {
       if (!ctx) return;
-      let opacityValue = 1;
       for (let a = 0; a < particles.length; a++) {
-        for (let b = a; b < particles.length; b++) {
-          let dx = particles[a].x - particles[b].x;
-          let dy = particles[a].y - particles[b].y;
-          let distance = Math.sqrt(dx * dx + dy * dy);
-
-          if (distance < 150) {
-            opacityValue = 1 - (distance / 150);
-            ctx.strokeStyle = `rgba(214, 186, 255, ${opacityValue * 0.15})`;
-            ctx.lineWidth = 1;
+        for (let b = a + 1; b < particles.length; b++) {
+          const dx = particles[a].x - particles[b].x;
+          const dy = particles[a].y - particles[b].y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          if (distance < 130) {
+            ctx.strokeStyle = `rgba(214, 186, 255, ${(1 - distance / 130) * 0.1})`;
+            ctx.lineWidth = 0.5;
             ctx.beginPath();
             ctx.moveTo(particles[a].x, particles[a].y);
             ctx.lineTo(particles[b].x, particles[b].y);
@@ -116,48 +96,143 @@ export default function Hero() {
       }
     }
 
-    let animationFrameId: number;
     function animate() {
       if (!ctx || !canvas) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      for (let i = 0; i < particles.length; i++) {
-        particles[i].draw();
-        particles[i].update();
-      }
+      particles.forEach((p) => { p.draw(); p.update(); });
       connect();
       animationFrameId = requestAnimationFrame(animate);
     }
 
     resizeCanvas();
     animate();
+    window.addEventListener("mousemove", handleMouseMove, { passive: true });
+    window.addEventListener("resize", resizeCanvas, { passive: true });
 
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('resize', handleResize);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("resize", resizeCanvas);
       cancelAnimationFrame(animationFrameId);
     };
   }, []);
 
   return (
     <section className="relative min-h-screen flex items-center pt-20 overflow-hidden bg-[#0D0D0F]">
-      <canvas ref={canvasRef} id="particles-canvas" className="absolute top-0 left-0 w-full h-full z-0"></canvas>
-      <div className="relative z-10 max-w-7xl mx-auto px-8 w-full text-center py-20 pointer-events-none">
-        <div className="space-y-8 max-w-4xl mx-auto">
-          <h1 className="text-5xl md:text-7xl lg:text-8xl font-headline font-bold leading-tight tracking-tight">
-            Fix Roads Faster with <span className="text-gradient">AI-Powered</span> Detection
-          </h1>
-          <p className="text-xl md:text-2xl text-on-surface-variant max-w-2xl mx-auto leading-relaxed">
-            Upload a photo. Let AI detect potholes. Instantly map road damage for smarter cities.
-          </p>
-          <div className="flex flex-wrap gap-6 justify-center pt-4 pointer-events-auto">
-            <Link to="/scan" className="btn-gradient px-10 py-5 rounded-md font-headline font-bold text-on-primary-container text-lg hover:brightness-110 transition-all shadow-xl shadow-primary/10 inline-block text-center">
-              Upload Image
+      {/* Interactive Particle Canvas */}
+      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full z-0" />
+
+      {/* Deep background radial glow */}
+      <div className="absolute inset-0 z-0 pointer-events-none">
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-primary/5 rounded-full blur-[120px]" />
+        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-error/5 rounded-full blur-[100px]" />
+      </div>
+
+      {/* Grid overlay */}
+      <div
+        className="absolute inset-0 z-0 pointer-events-none opacity-[0.03]"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(214,186,255,1) 1px, transparent 1px), linear-gradient(90deg, rgba(214,186,255,1) 1px, transparent 1px)",
+          backgroundSize: "80px 80px",
+        }}
+      />
+
+      {/* Content */}
+      <div className="relative z-10 max-w-7xl mx-auto px-8 w-full text-center py-24">
+        <div className="space-y-8 max-w-5xl mx-auto">
+
+          {/* Badge */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+            className="flex justify-center"
+          >
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-bold tracking-[0.15em] uppercase">
+              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+              Powered by YOLOv12 Neural Engine
+            </div>
+          </motion.div>
+
+          {/* Headline */}
+          <motion.h1
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+            className="text-5xl md:text-7xl lg:text-8xl font-headline font-bold leading-[1.04] tracking-tight"
+          >
+            Fix Roads Faster with
+            <br />
+            <span className="text-gradient">AI‑Powered</span>{" "}
+            <span className="text-on-surface/90">Detection</span>
+          </motion.h1>
+
+          {/* Subheadline */}
+          <motion.p
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className="text-lg md:text-xl text-on-surface-variant max-w-2xl mx-auto leading-relaxed"
+          >
+            Upload a photo. Let AI detect potholes in under 500ms. Instantly geo-log road damage to a live city dashboard.
+          </motion.p>
+
+          {/* CTAs */}
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            className="flex flex-wrap gap-4 justify-center pt-2"
+          >
+            <Link
+              to="/scan"
+              id="hero-scan-cta"
+              className="btn-gradient px-10 py-4 rounded-xl font-headline font-bold text-[#0D0D0F] text-base shadow-2xl shadow-primary/25 flex items-center gap-2"
+            >
+              <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>camera</span>
+              Upload Image →
             </Link>
-            <Link to="/map" className="px-10 py-5 rounded-md border border-outline-variant/30 text-primary font-headline font-bold text-lg hover:bg-surface-container-high transition-all inline-block text-center">
+            <Link
+              to="/map"
+              id="hero-map-cta"
+              className="btn-outline-primary px-10 py-4 rounded-xl font-headline font-bold text-base flex items-center gap-2"
+            >
+              <span className="material-symbols-outlined text-[20px]">map</span>
               View Live Map
             </Link>
-          </div>
+          </motion.div>
+
+          {/* Stats */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 1, delay: 0.6 }}
+            className="flex justify-center gap-10 pt-6 border-t border-outline-variant/10 mt-8"
+          >
+            {stats.map(({ value, label }) => (
+              <div key={label} className="text-center">
+                <div className="text-2xl font-headline font-bold text-primary">{value}</div>
+                <div className="text-[10px] text-on-surface-variant/50 uppercase tracking-widest mt-0.5 font-label">{label}</div>
+              </div>
+            ))}
+          </motion.div>
         </div>
+
+        {/* Scroll indicator */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 1.2, duration: 0.6 }}
+          className="absolute bottom-10 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 text-on-surface-variant/30"
+        >
+          <span className="text-[10px] uppercase tracking-widest font-label">Scroll to explore</span>
+          <motion.div
+            animate={{ y: [0, 6, 0] }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+          >
+            <span className="material-symbols-outlined text-sm">keyboard_arrow_down</span>
+          </motion.div>
+        </motion.div>
       </div>
     </section>
   );

@@ -2,22 +2,21 @@
 export default {
   darkMode: ["class"],
   content: [
-    './index.html',
-    './pages/**/*.{ts,tsx}',
-    './components/**/*.{ts,tsx}',
-    './app/**/*.{ts,tsx}',
-    './src/**/*.{ts,tsx}',
+    "./index.html",
+    "./pages/**/*.{ts,tsx}",
+    "./components/**/*.{ts,tsx}",
+    "./app/**/*.{ts,tsx}",
+    "./src/**/*.{ts,tsx}",
   ],
   theme: {
     container: {
       center: true,
       padding: "2rem",
-      screens: {
-        "2xl": "1400px",
-      },
+      screens: { "2xl": "1400px" },
     },
     extend: {
       colors: {
+        // Material Design 3 — Purple/Dark Surface palette
         "on-primary-fixed-variant": "#6000bf",
         "on-surface": "#e5e1e4",
         "primary-container": "#6c1ecd",
@@ -64,26 +63,49 @@ export default {
         "on-tertiary-fixed-variant": "#5700c9",
         "surface-container": "#201f21",
         "surface-variant": "#353437",
-        "inverse-on-surface": "#313032"
+        "inverse-on-surface": "#313032",
       },
       fontFamily: {
-        "headline": ["Space Grotesk", "sans-serif"],
-        "body": ["Inter", "sans-serif"],
-        "label": ["Inter", "sans-serif"]
+        headline: ["Space Grotesk", "sans-serif"],
+        body: ["Inter", "sans-serif"],
+        label: ["Inter", "sans-serif"],
       },
       borderRadius: {
-        "DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"
+        DEFAULT: "0.25rem",
+        lg: "0.5rem",
+        xl: "0.75rem",
+        "2xl": "1rem",
+        "3xl": "1.5rem",
+        full: "9999px",
       },
       keyframes: {
-        "ripple": {
-          "0%": { transform: "scale(1)", opacity: "0.8" },
-          "100%": { transform: "scale(6)", opacity: "0" },
-        }
+        ripple: {
+          "0%":   { transform: "scale(1)",   opacity: "0.8" },
+          "100%": { transform: "scale(6.5)", opacity: "0" },
+        },
+        "float-up": {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%":      { transform: "translateY(-8px)" },
+        },
+        shimmer: {
+          "0%":   { backgroundPosition: "-200% 0" },
+          "100%": { backgroundPosition: "200% 0" },
+        },
       },
       animation: {
-        "ripple": "ripple 3s ease-in-out infinite"
+        ripple:    "ripple 3.5s ease-in-out infinite",
+        "float-up": "float-up 4s ease-in-out infinite",
+        shimmer:   "shimmer 2.5s linear infinite",
+      },
+      boxShadow: {
+        glow: "0 0 40px rgba(214, 186, 255, 0.15)",
+        "glow-error": "0 0 40px rgba(255, 180, 171, 0.15)",
+        "glow-lg": "0 0 80px rgba(214, 186, 255, 0.12), 0 0 160px rgba(108, 30, 205, 0.08)",
+      },
+      backgroundImage: {
+        "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
       },
     },
   },
   plugins: [],
-}
+};
