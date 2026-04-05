@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { MapContainer, TileLayer, useMap, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
@@ -58,12 +58,65 @@ function getSeverityStyle(sev: string) {
   }
 }
 
+const formatDateIST = (dateStr: string) => {
+  const date = new Date(dateStr);
+  const timeStr = new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  }).format(date).toUpperCase();
+  const dateStrFormatted = new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata",
+    day: "2-digit",
+    month: "long",
+  }).format(date);
+  return `${timeStr}, ${dateStrFormatted}`;
+};
+
+function MapSyncHandler({ selected, potholes }: { selected: string | null, potholes: MongoPothole[] }) {
+  const map = useMap();
+  useEffect(() => {
+    if (selected) {
+      const pothole = potholes.find(p => p._id === selected);
+      if (pothole) {
+        map.flyTo([pothole.latitude, pothole.longitude], 18, { animate: true, duration: 1.5 });
+      }
+    }
+  }, [selected, potholes, map]);
+  return null;
+}
+
+function PotholeMarker({ p, isSelected }: { p: MongoPothole, isSelected: boolean }) {
+  const markerRef = useRef<L.Marker>(null);
+  
+  useEffect(() => {
+    if (isSelected && markerRef.current) {
+      markerRef.current.openPopup();
+    }
+  }, [isSelected]);
+
+  return (
+    <Marker ref={markerRef} position={[p.latitude, p.longitude]} icon={potholeIcon}>
+      <Popup className="custom-popup">
+        <div className="p-1 space-y-2 min-w-[140px]">
+          <img src={p.image_url} alt="Detection" className="w-full h-20 object-cover rounded-lg shadow" loading="lazy" />
+          <div className={`text-xs font-bold ${getSeverityStyle(p.severity).text}`}>{p.severity} Severity</div>
+          <div className="text-[10px] text-gray-500">{formatDateIST(p.timestamp)}</div>
+        </div>
+      </Popup>
+    </Marker>
+  );
+}
+
 export default function MapPage() {
   const [potholes, setPotholes] = useState<MongoPothole[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const [modalPothole, setModalPothole] = useState<MongoPothole | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [isZoomed, setIsZoomed] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -90,6 +143,11 @@ export default function MapPage() {
 
   const criticalCount = potholes.filter((p) => p.severity === "Critical").length;
   const highCount = potholes.filter((p) => p.severity === "High").length;
+
+  const handleLogClick = (p: MongoPothole) => {
+    setSelected(p._id);
+    setModalPothole(p);
+  };
 
   return (
     <main className="md:h-[calc(100vh-72px)] flex flex-col bg-[#08080A] md:overflow-hidden pt-[72px]">
@@ -157,22 +215,10 @@ export default function MapPage() {
                 attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
                 url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
               />
+              <MapSyncHandler selected={selected} potholes={potholes} />
               <HeatmapLayer points={heatPoints} />
               {potholes.map((p) => (
-                <Marker
-                  key={p._id}
-                  position={[p.latitude, p.longitude]}
-                  icon={potholeIcon}
-                  eventHandlers={{ click: () => setSelected(p._id) }}
-                >
-                  <Popup className="custom-popup">
-                    <div className="p-1 space-y-2 min-w-[140px]">
-                      <img src={p.image_url} alt="Detection" className="w-full h-20 object-cover rounded-lg shadow" loading="lazy" />
-                      <div className={`text-xs font-bold ${getSeverityStyle(p.severity).text}`}>{p.severity} Severity</div>
-                      <div className="text-[10px] text-gray-500">{new Date(p.timestamp).toLocaleString()}</div>
-                    </div>
-                  </Popup>
-                </Marker>
+                <PotholeMarker key={p._id} p={p} isSelected={selected === p._id} />
               ))}
             </MapContainer>
           )}
@@ -188,7 +234,7 @@ export default function MapPage() {
         </div>
 
         {/* ── Sidebar Feed ── */}
-        <div className="w-full md:w-[380px] bg-[#0c0c0e] flex flex-col md:overflow-y-auto shrink-0">
+        <div className="w-full md:w-[380px] bg-[#0c0c0e] flex flex-col md:overflow-y-auto shrink-0 z-10">
           <div className="p-5 border-b border-outline-variant/5 sticky top-0 bg-[#0c0c0e]/95 backdrop-blur-md z-10">
             <h2 className="font-headline font-bold text-base text-[#E5E1E4] flex items-center gap-2">
               <span className="material-symbols-outlined text-primary text-lg">database</span>
@@ -201,7 +247,7 @@ export default function MapPage() {
             </h2>
           </div>
 
-          <div className="p-4 space-y-2.5 flex-1">
+          <div className="p-4 space-y-2.5 flex-1 shadow-inner">
             <AnimatePresence>
               {loading ? (
                 [1, 2, 3, 4].map((i) => (
@@ -239,11 +285,15 @@ export default function MapPage() {
                       initial={{ opacity: 0, y: 16 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.4, delay: Math.min(i * 0.05, 0.3) }}
-                      onClick={() => setSelected(isSelected ? null : p._id)}
-                      className={`glass-panel p-3 rounded-2xl border transition-all cursor-pointer group flex gap-3 ${
+                      onClick={() => handleLogClick(p)}
+                      className={`glass-panel p-3 rounded-2xl border transition-all cursor-pointer group flex gap-3 relative ${
                         isSelected ? `${s.border} ${s.bg}` : "border-outline-variant/10 hover:border-primary/30"
                       }`}
                     >
+                      {/* Active Indicator Line */}
+                      {isSelected && (
+                        <motion.div layoutId="activeLog" className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-l-2xl shadow-[0_0_8px_rgba(var(--color-primary),0.8)]" />
+                      )}
                       {/* Thumbnail */}
                       <div className="w-[72px] h-[72px] rounded-xl overflow-hidden shrink-0 border border-outline-variant/20">
                         <img
@@ -261,8 +311,8 @@ export default function MapPage() {
                             <span className={`w-1 h-1 rounded-full ${s.dot}`} />
                             {p.severity}
                           </span>
-                          <span className="text-[9px] text-on-surface-variant/60">
-                            {formatDistanceToNow(new Date(p.timestamp), { addSuffix: true })}
+                          <span className="text-[9px] text-on-surface-variant/60 font-semibold" title={formatDistanceToNow(new Date(p.timestamp), { addSuffix: true })}>
+                            {formatDateIST(p.timestamp)}
                           </span>
                         </div>
                         <div className="text-[10px] font-mono text-on-surface-variant/60 flex items-center gap-0.5 mt-1">
@@ -288,6 +338,111 @@ export default function MapPage() {
           </div>
         </div>
       </div>
+
+      {/* ── Modal for Deep Linking ── */}
+      <AnimatePresence>
+        {modalPothole && (
+          <motion.div
+            initial={{ opacity: 0, backdropFilter: "blur(0px)" }}
+            animate={{ opacity: 1, backdropFilter: "blur(8px)" }}
+            exit={{ opacity: 0, backdropFilter: "blur(0px)" }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-[#08080A]/60 p-4 sm:p-6 md:p-12"
+            onClick={() => setModalPothole(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.95, y: -20, opacity: 0 }}
+              transition={{ type: "spring", bounce: 0.3, duration: 0.5 }}
+              className="bg-[#0C0C0E] border border-outline-variant/20 rounded-3xl overflow-hidden w-full max-w-4xl shadow-2xl flex flex-col md:flex-row relative"
+              onClick={(e) => e.stopPropagation()} // stop close on inner click
+            >
+              {/* Close Button */}
+              <button 
+                className="absolute top-4 right-4 z-50 w-10 h-10 rounded-full bg-black/40 hover:bg-black/60 border border-white/10 flex items-center justify-center text-white backdrop-blur-md transition-all"
+                onClick={() => {
+                  setModalPothole(null);
+                  setIsZoomed(false);
+                }}
+              >
+                <span className="material-symbols-outlined text-xl">close</span>
+              </button>
+
+              {/* Image Section */}
+              <div 
+                className="w-full md:w-[60%] lg:w-[65%] h-[40vh] md:h-[70vh] bg-black relative cursor-zoom-in overflow-hidden group"
+                onClick={() => setIsZoomed(!isZoomed)}
+              >
+                <motion.img 
+                  animate={{ scale: isZoomed ? 1.5 : 1 }}
+                  transition={{ type: "tween", duration: 0.4 }}
+                  src={modalPothole.image_url} 
+                  alt="Pothole" 
+                  className={`w-full h-full object-contain ${isZoomed ? 'cursor-zoom-out' : 'cursor-zoom-in'}`}
+                />
+                {!isZoomed && (
+                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none bg-black/20">
+                    <span className="bg-black/60 text-white px-4 py-2 rounded-full text-sm font-bold flex items-center gap-2 backdrop-blur-md">
+                      <span className="material-symbols-outlined text-lg">zoom_in</span>
+                      Click to Zoom
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Details Section */}
+              <div className="flex-1 p-6 md:p-8 flex flex-col justify-between overflow-y-auto">
+                <div className="space-y-6">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="material-symbols-outlined text-primary">analytics</span>
+                      <h3 className="text-sm font-bold text-on-surface-variant/80 uppercase tracking-widest font-label">Hazard Log</h3>
+                    </div>
+                    <h2 className="text-3xl font-headline font-bold text-[#E5E1E4]">Detection Details</h2>
+                  </div>
+
+                  <div className="space-y-4">
+                    {/* Severity */}
+                    <div className="bg-surface-container rounded-2xl p-4 border border-outline-variant/10">
+                      <div className="text-xs text-on-surface-variant/50 uppercase tracking-wider mb-1">Assigned Severity</div>
+                      <div className="text-lg font-bold flex items-center gap-2">
+                        <span className={`w-3 h-3 rounded-full ${getSeverityStyle(modalPothole.severity).dot} animate-pulse`} />
+                        <span className={getSeverityStyle(modalPothole.severity).text}>{modalPothole.severity}</span>
+                      </div>
+                    </div>
+
+                    {/* Timestamp */}
+                    <div className="bg-surface-container rounded-2xl p-4 border border-outline-variant/10">
+                      <div className="text-xs text-on-surface-variant/50 uppercase tracking-wider mb-1">Timestamp (IST)</div>
+                      <div className="text-base font-medium text-[#E5E1E4] flex items-center gap-2">
+                        <span className="material-symbols-outlined text-lg text-on-surface-variant/60">schedule</span>
+                        {formatDateIST(modalPothole.timestamp)}
+                      </div>
+                    </div>
+
+                    {/* Location */}
+                    <div className="bg-surface-container rounded-2xl p-4 border border-outline-variant/10">
+                      <div className="text-xs text-on-surface-variant/50 uppercase tracking-wider mb-1">Exact Coordinates</div>
+                      <div className="text-base font-mono text-primary flex items-center gap-2 bg-[#0c0c0e] p-2 rounded-lg mt-1 border border-primary/20">
+                        <span className="material-symbols-outlined text-lg">pin_drop</span>
+                        {modalPothole.latitude.toFixed(6)}, {modalPothole.longitude.toFixed(6)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-8 pt-4 border-t border-outline-variant/10 flex items-center justify-between text-xs text-on-surface-variant/50 font-mono">
+                  <span>Record ID: {modalPothole._id.slice(-6).toUpperCase()}</span>
+                  <span className="flex items-center gap-1">
+                    <span className="material-symbols-outlined text-[14px]">memory</span>
+                    Analysis Complete
+                  </span>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   );
 }
