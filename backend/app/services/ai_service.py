@@ -17,35 +17,32 @@ def _old_aattn_forward(self, x: torch.Tensor) -> torch.Tensor:
     """
     Exact re-implementation of the sunsmarterjie/yolov12 fork AAttn forward.
 
-    That fork's AAttn has FOUR learnable components:
-        self.qk   → nn.Linear(C, 2C)  — projects to Q and K
-        self.v    → nn.Linear(C, C)   — separate Value projection
-        self.pe   → nn.Conv2d(C, C, 7, 1, 3, groups=C)  — DWConv positional enc
-        self.proj → nn.Linear(C, C)   — output projection
+    That fork's AAttn has FOUR learnable components that are CONV or wrapped CONV:
+        self.qk   → Conv(C, 2C)  — expects (B, C, H, W)
+        self.v    → Conv(C, C)   — expects (B, C, H, W)
+        self.pe   → Conv2d(C, C, 7, 1, 3, groups=C)  — expects (B, C, H, W)
+        self.proj → Conv(C, C)   — expects (B, C, H, W)
 
-    New Ultralytics merged these into a single self.qkv → nn.Linear(C, 3C),
-    which causes a RuntimeError when loading old weights because the projection
-    dimension is 2C (not 3C), making the reshape [B*area, N/area, C*3] invalid.
-
-    This method is bound as an instance method on every old-style AAttn block
-    at model-load time, transparently replacing the broken built-in forward.
+    This forward method respects the 4D input requirements of the layers.
     """
     B, C, H, W = x.shape
     N = H * W
     head_dim = C // self.num_heads
-    xf = x.flatten(2).transpose(1, 2)  # B, N, C  (flattened spatial)
 
-    # ── Q, K ── from 'qk' projection (old fork, outputs 2C) ─────────────────
-    qk = self.qk(xf)          # B, N, 2C
+    # ── 1. Q, K, V Projections (on 4D tensors) ──────────────────────────────
+    qk_spatial = self.qk(x)  # B, 2C, H, W
+    if hasattr(self, "v") and self.v is not None:
+        v_spatial = self.v(x) # B, C, H, W
+    else:
+        v_spatial = x         # fallback
+        
+    # Flatten to sequence for attention: (B, C, H, W) -> (B, N, C)
+    qk = qk_spatial.flatten(2).transpose(1, 2)  
+    v  = v_spatial.flatten(2).transpose(1, 2)
+    
     q, k = qk.chunk(2, dim=-1)  # B, N, C each
 
-    # ── V ── from separate 'v' projection (if present) else fall back to x ───
-    if hasattr(self, "v") and self.v is not None:
-        v = self.v(xf)         # B, N, C
-    else:
-        v = xf                 # B, N, C  — fallback: use raw input
-
-    # ── Area partitioning ────────────────────────────────────────────────────
+    # ── 2. Area partitioning ────────────────────────────────────────────────
     if self.area > 1:
         N_a = N // self.area
         q = q.reshape(B * self.area, N_a, C)
@@ -55,13 +52,13 @@ def _old_aattn_forward(self, x: torch.Tensor) -> torch.Tensor:
     else:
         Beff, Neff = B, N
 
-    # ── Multi-head reshape ───────────────────────────────────────────────────
+    # ── 3. Multi-head reshape ───────────────────────────────────────────────
     def _mh(t: torch.Tensor) -> torch.Tensor:
         return t.reshape(Beff, Neff, self.num_heads, head_dim).transpose(1, 2)
 
     q, k, v_mh = _mh(q), _mh(k), _mh(v)
 
-    # ── Scaled dot-product attention ─────────────────────────────────────────
+    # ── 4. Scaled dot-product attention ─────────────────────────────────────
     scale = head_dim ** -0.5
     attn = (q @ k.transpose(-2, -1)) * scale   # Beff, heads, Neff, Neff
     attn = attn.softmax(dim=-1)
@@ -70,28 +67,26 @@ def _old_aattn_forward(self, x: torch.Tensor) -> torch.Tensor:
 
     # Restore area partitioning → full sequence
     if self.area > 1:
-        out = out.reshape(B, N, C)   # B, N, C  (v is also B, N, C now)
-        v   = v.reshape(B, N, C)
+        out = out.reshape(B, N, C)
 
-    # ── Positional encoding (DWConv7x7 applied spatially to V) ──────────────
-    # The pe Conv2d expects shape (B, C, H, W).
-    # In the original fork: out = out + pe(v.reshape(B, C, H, W)).flatten.T
+    # Convert back to spatial for residual & output layers: (B, N, C) -> (B, C, H, W)
+    out_spatial = out.transpose(1, 2).reshape(B, C, H, W)
+
+    # ── 5. Positional encoding & Projection on 4D ───────────────────────────
     if hasattr(self, "pe") and self.pe is not None:
         try:
-            v_spatial = v.transpose(1, 2).reshape(B, C, H, W)  # B, C, H, W
-            pe_out    = self.pe(v_spatial).flatten(2).transpose(1, 2)  # B, N, C
-            out       = out + pe_out
+            # PE is applied to value tensor the original fork
+            out_spatial = out_spatial + self.pe(v_spatial)
         except Exception as e:
             logger.debug("AAttn pe skip: %s", e)
 
-    # ── Output projection ────────────────────────────────────────────────────
     if hasattr(self, "proj") and self.proj is not None:
         try:
-            out = self.proj(out)   # B, N, C
+            out_spatial = self.proj(out_spatial)
         except Exception as e:
             logger.debug("AAttn proj skip: %s", e)
 
-    return out.transpose(1, 2).reshape(B, C, H, W)
+    return out_spatial
 # ─────────────────────────────────────────────────────────────────────────────
 
 
