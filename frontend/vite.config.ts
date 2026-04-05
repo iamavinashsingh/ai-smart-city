@@ -13,12 +13,15 @@ export default defineConfig({
     // Split vendor chunks for better long-term caching
     rollupOptions: {
       output: {
-        manualChunks: {
-          "react-vendor": ["react", "react-dom", "react-router-dom"],
-          "map-vendor": ["leaflet", "react-leaflet", "leaflet.heat"],
-          "three-vendor": ["three", "three-globe"],
-          "motion-vendor": ["framer-motion"],
-          "date-vendor": ["date-fns"],
+        manualChunks(id) {
+          if (id.includes("node_modules")) {
+            if (id.includes("react")) return "react-vendor";
+            if (id.includes("leaflet")) return "map-vendor";
+            if (id.includes("three")) return "three-vendor";
+            if (id.includes("framer-motion")) return "motion-vendor";
+            if (id.includes("date-fns")) return "date-vendor";
+            return "vendor";
+          }
         },
       },
     },
