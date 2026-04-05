@@ -48,7 +48,7 @@ export default function MapPreview() {
       .hexPolygonMargin(0.3)
       .hexPolygonColor((e) => ['IND'].includes((e as any).properties.ISO_A3) ? '#6c1ecd' : 'rgba(214, 186, 255, 0.05)');
 
-    fetch('https://raw.githubusercontent.com/vasturiano/three-globe/master/example/country-polygons/ne_110m_admin_0_countries.json')
+    fetch('https://raw.githubusercontent.com/vasturiano/globe.gl/master/example/datasets/ne_110m_admin_0_countries.geojson')
       .then(res => res.json())
       .then(countries => {
           Globe.hexPolygonsData(countries.features);
