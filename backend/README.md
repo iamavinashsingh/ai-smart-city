@@ -1,112 +1,159 @@
-# AI Pothole Detection: Backend Engine (FastAPI + YOLOv12)
+# 🚧 Edge-to-Cloud AI Pothole Detection System - Backend
 
-![Project Banner](../assets/banner.png)
+## 📖 Project Overview
 
-## 🏗️ System Architecture & Workflow
-The backend is designed as a **High-Fidelity AI Inference Engine**. It processes raw, high-resolution user-uploaded images, extracts geospatial hazards, and pushes them to a globally distributed cloud infrastructure.
+The backend of the Edge-to-Cloud AI Pothole Detection System is a high-performance Python-based REST API designed for processing and classifying road surface anomalies natively from edge devices. It relies on the rigorous speed and accuracy of a trained YOLOv12 architecture for pothole detection, offloads heavy multimedia to a globally distributed CDN (Cloudinary), and logs geospatial time-series telemetry natively into a modern document store (MongoDB Atlas). Built utilizing FastAPI, the architecture prioritizes non-blocking asynchronous execution and a clean separation of concerns.
 
-### The "Edge-to-Cloud" Pipeline:
-1. **Ingestion**: The FastAPI server receives a multipart/form-data payload containing a raw image (3–5 MB) and HTML5 GPS coordinates.
-2. **AI Inference (YOLOv12)**: The image is passed to a pre-loaded, singleton YOLOv12 model. To prevent blocking the main event loop, this task is delegated to a background thread pool.
-3. **CDN Compression (Cloudinary)**: Simultaneously, the raw image is streamed to Cloudinary using an auto-quality flag, reducing it to a lightweight WebP (~200KB) URL.
-4. **Data Aggregation**: Detection results (bounding boxes, confidence), GPS coordinates, and the CDN URL are aggregated into a single document.
-5. **NoSQL Persistence (MongoDB Atlas)**: The document is logged into a geospatial collection for real-time heatmap rendering.
+## 📂 Folder Structure
 
----
-
-## 📂 Project Structure (Layered Micro-Service Architecture)
-
-```plaintext
+```text
 backend/
-├── .env                        # Critical: Environment secrets (Cloudinary, Mongo)
-├── requirements.txt            # System dependencies (Fastapi, Ultralytics, Motor)
-├── best.pt                     # Fine-tuned YOLOv12S Pothole Model (62.2% mAP50)
-│
-└── app/                        # Main Application Container
-    ├── main.py                 # Entry point with Lifespan & Singleton loading
-    │
-    ├── api/                    
-    │   └── routes.py           # Traffic Controller: Defines /detect and /potholes
-    │
-    ├── core/                   
-    │   └── config.py           # Security Layer: Pydantic-Settings management
-    │
-    ├── services/               # The "Brain" (Business Logic Layer)
-    │   ├── ai_service.py       # YOLOv12 Inference & Thread-pooling logic
-    │   ├── storage_service.py  # Cloudinary SDK Integration & Optimization
-    │   └── db_service.py       # Async MongoDB Atlas (Motor) operations
-    │
-    └── schemas/                
-        └── models.py           # Data Validation: Pydantic schemas for API I/O
+├── app/
+│   ├── api/
+│   │   └── routes.py         # FastAPI endpoint controllers
+│   ├── core/
+│   │   └── config.py         # Pydantic environment configuration
+│   ├── schemas/
+│   │   └── models.py         # Data validation & response models
+│   ├── services/
+│   │   ├── ai_service.py     # YOLOv12 inference logic
+│   │   ├── db_service.py     # MongoDB interactions
+│   │   └── storage_service.py # Cloudinary CDN integration
+│   └── main.py               # Application entry point & lifecycle management
+├── .env.example              # Template for required environment variables
+├── best.pt                   # Pre-trained YOLOv12 model weights
+├── Dockerfile                # Containerization manifests
+├── requirements.txt          # Defines production dependencies
+└── README.md                 # Project documentation
 ```
 
----
+## 🧩 Key Modules & Core Functions
 
-## ⚡ Engineering Strategies
+### 1. `app/main.py` (Application Lifecycle)
+Acts as the central orchestrator. It registers endpoints, configures CORS, handles structured HTTP logging via custom middleware, and manages a `lifespan` context manager. This latter mechanism ensures the heavy YOLOv12 model and the MongoDB connection pools are loaded into memory exactly once at startup, successfully removing per-request operational overhead.
 
-### 1. Singleton Model Loading (Lifespan Context)
-The fine-tuned YOLOv12S model is loaded once at startup using **FastAPI Lifespan** to avoid per-request cold-starts. A runtime compatibility patch bridges the original `sunsmarterjie/yolov12` fork weights with the latest Ultralytics engine.
+### 2. `app/services/ai_service.py` (AI Inference Engine)
+Integrates the `ultralytics` package to deserialize incoming images and execute neural network inference. It efficiently predicts bounding boxes and confidence scores, filtering for specific pothole classifications.
 
-### 2. Async Non-Blocking Execution
-Since YOLO inference is a CPU-bound task, it would ordinarily "block" our async server. We use `asyncio.to_thread` to push these heavy computations to a background executor, allowing the server to handle multiple uploads concurrently.
+### 3. `app/services/storage_service.py` (CDN Integration)
+Handles server-side asynchronous image uploads to Cloudinary. Raw captures are persisted to a robust CDN, generating scalable public image URLs that minimize payload footprints for downstream dashboard consumption.
 
-### 3. Intelligent Storage Optimization
-We leverage Cloudinary's `quality="auto"` and `fetch_format="webp"` transformation. This drastically reduces bandwidth costs and improves Map Dashboard loading speeds without losing pixel-level evidence of road hazards.
+### 4. `app/services/db_service.py` (Database Layer)
+Interfaces seamlessly with MongoDB Atlas via the `motor` asynchronous driver. It securely persists high-fidelity logs containing geospatial metrics (Latitude/Longitude), detection counts, severity classifications, and remote image references.
 
----
+## 📡 API Documentation
 
-## 🛠️ API Reference
+### 1. Detect Pothole
+**`POST /api/v1/detect`**
+Executes an edge-to-cloud inference pipeline: receives a captured road image, detects potholes via YOLOv12, uploads the resulting image to Cloudinary, logs geospatial data to MongoDB, and returns a fully structured payload.
 
-### 📡 POST `/api/v1/detect`
-Processes a new road scan and logs the hazard.
-
-**Request (Form-Data):**
-- `image`: File (JPG/PNG)
-- `latitude`: Float
-- `longitude`: Float
-
-**Response (JSON):**
+- **Content-Type**: `multipart/form-data`
+- **Payload Requirements**:
+  - `image` (File): Road capture (JPEG / PNG / WebP).
+  - `latitude` (Float): GPS latitude of the capture point.
+  - `longitude` (Float): GPS longitude of the capture point.
+- **Example Response (200 OK)**:
 ```json
 {
   "success": true,
-  "message": "Detected 2 potholes.",
-  "image_url": "https://res.cloudinary.com/.../image.webp",
+  "message": "Detected 2 pothole(s). Severity: High.",
+  "image_url": "https://res.cloudinary.com/...",
   "detections": [
-    { "bbox": [10, 20, 100, 200], "confidence": 0.89 }
+    {
+      "bbox": [150.5, 200.0, 300.5, 450.0],
+      "confidence": 0.89
+    }
   ],
-  "timestamp": "2024-04-03T18:00:00Z",
-  "location": { "lat": 19.076, "lng": 72.877 }
+  "timestamp": "2026-04-05T12:00:00Z",
+  "location": {"lat": 40.7128, "lng": -74.0060}
 }
 ```
 
-### 📡 GET `/api/v1/potholes`
-Retrieves historical logs for the Map Grid.
+### 2. Retrieve Pothole Feed
+**`GET /api/v1/potholes?limit={count}`**
+Retrieves historical, paginated pothole detections. Currently tailored to fuel live data feeds powering the frontend geographic dashboards.
 
-**Response (JSON):**
+- **Query Parameters**: `limit` (Int, default 50, range 1-200)
+- **Example Response (200 OK)**:
 ```json
 {
   "success": true,
+  "count": 50,
   "data": [
-    { "latitude": 19.102, "longitude": 72.845, "severity": "Critical", ... }
+    {
+      "id": "60e1d...",
+      "image_url": "https://...",
+      "severity": "Critical",
+      "latitude": 40.7128,
+      "longitude": -74.0060,
+      "timestamp": "2026-04-05T12:00:00Z"
+    }
   ]
 }
 ```
 
----
+### 3. System Diagnostics
+**`GET /health`**
+Lightweight liveness probe ensuring the platform is healthy for Kubernetes deployments/container orchestrators.
+**`GET /`**
+Root greeting with link reference to Swagger documentation.
 
-## 🚀 Local Setup
+## 📦 Dependencies
 
-1. **Install Python 3.9+**
-2. **Environment Configuration**: Rename `.env.example` to `.env` and fill in:
-   - `MONGO_URI`
-   - `CLOUDINARY_CLOUD_NAME`
-   - `CLOUDINARY_API_KEY`
-   - `CLOUDINARY_API_SECRET`
-3. **Installation**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. **Execution**:
-   ```bash
-   uvicorn app.main:app --reload
-   ```
+Defined in `requirements.txt`. The application stack leverages:
+- **Core Server**: `fastapi` & `uvicorn[standard]` (High-performance API framework and ASGI server)
+- **AI / Computer Vision**: `ultralytics>=8.3.71`, `opencv-python-headless`, `pillow`
+- **Cloud / Storage Layer**: `cloudinary`
+- **Persistence**: `motor`, `pymongo` (Async driver for MongoDB Atlas)
+- **Ecosystem Tooling**: `pydantic-settings`, `python-dotenv`, `python-multipart`
+
+## 🛠️ Setup Instructions & Usage Guidelines
+
+### 1. Prerequisites
+- `Python 3.10+` running securely in your local or containerized environment
+- MongoDB Atlas cluster URL (with whitelisted IP configurations)
+- Cloudinary Developer Account (Cloud Name, API Key, API Secret)
+
+### 2. Environment Configuration
+Create a `.env` file at the root of the `backend` directory. Use the provided `.env.example` as a baseline:
+```env
+# Cloudinary
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+
+# MongoDB
+MONGO_URI=mongodb+srv://<user>:<password>@cluster0.xxx.mongodb.net/?retryWrites=true&w=majority
+DATABASE_NAME=SmartCityDB
+COLLECTION_NAME=PotholeLogs
+
+# Application
+MODEL_PATH=best.pt
+PORT=8000
+```
+
+### 3. Installation
+Navigate into the backend project root and systematically setup dependencies. Note: Establishing a protected virtual environment is strictly recommended. 
+```bash
+# Generate and step into a virtual environment
+python -m venv venv
+
+# Activate (Windows)
+venv\Scripts\activate
+# Activate (Linux / macOS)
+source venv/bin/activate
+
+# Fetch Requirements
+pip install -r requirements.txt
+```
+
+### 4. Bootstrapping Development Server
+Launch the server to evaluate integrations natively:
+```bash
+python -m app.main
+```
+Alternatively, utilizing Uvicorn explicitly with hot-reloading:
+```bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+**Interactive Documentation**: Validate APIs using standard Swagger UI implicitly bundled with FastAPI: Navigate to [http://localhost:8000/docs](http://localhost:8000/docs).
