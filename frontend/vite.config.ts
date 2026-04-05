@@ -29,8 +29,8 @@ export default defineConfig({
     chunkSizeWarningLimit: 800,
     // Enable source maps in production for error tracking
     sourcemap: false,
-    // Minify with esbuild (default, fastest)
-    minify: "esbuild",
+    // Minify with OXC — Vite 8 built-in, no extra package needed
+    minify: "oxc",
     // Target modern browsers for smaller output
     target: "es2020",
   },
