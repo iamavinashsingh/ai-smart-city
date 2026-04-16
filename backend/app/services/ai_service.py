@@ -155,14 +155,17 @@ class AIService:
         self,
         image_bytes: bytes,
         confidence: float = 0.25,
-    ) -> List[Dict]:
+    ) -> tuple[List[Dict], int, int]:
         """
-        Run YOLOv12 inference on *image_bytes* and return a list of detections.
+        Run YOLOv12 inference on *image_bytes* and return detections + image
+        dimensions.
 
-        Each detection is a dict with keys:
-            bbox       – [x1, y1, x2, y2] in pixel coordinates
-            confidence – float in [0, 1]
-            class_id   – int (0 == pothole)
+        Returns:
+            A tuple of (detections, img_width, img_height).
+            Each detection is a dict with keys:
+                bbox       – [x1, y1, x2, y2] in pixel coordinates
+                confidence – float in [0, 1]
+                class_id   – int (0 == pothole)
 
         Inference is executed in a thread-pool executor to keep the event loop
         free for concurrent requests.
@@ -174,8 +177,9 @@ class AIService:
         if not self.is_ready:
             raise RuntimeError("YOLO model is not initialised. Call load_model() first.")
 
-        def _detect() -> List[Dict]:
+        def _detect() -> tuple[List[Dict], int, int]:
             img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+            img_width, img_height = img.size
             results = self.model.predict(img, conf=confidence, verbose=False)
 
             detections: List[Dict] = []
@@ -188,12 +192,12 @@ class AIService:
                             "class_id": int(box.cls[0]),
                         }
                     )
-            return detections
+            return detections, img_width, img_height
 
         logger.debug("Dispatching inference to thread pool...")
-        detections = await asyncio.to_thread(_detect)
-        logger.debug("Inference returned %d raw detections.", len(detections))
-        return detections
+        detections, img_w, img_h = await asyncio.to_thread(_detect)
+        logger.debug("Inference returned %d raw detections (img=%dx%d).", len(detections), img_w, img_h)
+        return detections, img_w, img_h
 
 
 # ── Module-level singleton ─────────────────────────────────────────────────────

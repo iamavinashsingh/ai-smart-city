@@ -217,6 +217,27 @@
 .animate-fade-up-delay-3 { animation-delay: 0.3s; }
 .animate-fade-up-delay-4 { animation-delay: 0.4s; }
 
+/* ── Custom Leaflet SVG Icons ──────────────────────────────────────────────── */
+.custom-svg-icon {
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.custom-popup .leaflet-popup-content-wrapper {
+  background: rgba(12, 12, 14, 0.95);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(214, 186, 255, 0.15);
+  border-radius: 12px;
+  color: #e5e1e4;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.custom-popup .leaflet-popup-tip {
+  background: rgba(12, 12, 14, 0.95);
+  border: 1px solid rgba(214, 186, 255, 0.15);
+}
+
 /* ── Noise Texture ─────────────────────────────────────────────────────────── */
 .noise-overlay::after {
   content: '';

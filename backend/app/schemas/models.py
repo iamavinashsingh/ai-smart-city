@@ -49,8 +49,10 @@ class DetectionResponse(BaseModel):
 
     success: bool
     message: str
-    image_url: str = Field(..., description="CDN URL of the uploaded (WebP-compressed) image.")
+    image_url: Optional[str] = Field(None, description="CDN URL of the annotated (WebP-compressed) image. Absent for Normal roads.")
     detections: List[PotholeDetection]
+    severity: str = Field(..., description="'Normal' | 'Low' | 'Moderate' | 'High' | 'Critical'")
+    max_pothole_ratio: Optional[float] = Field(None, description="Ratio of largest bbox area to image area.")
     timestamp: datetime = Field(..., description="UTC timestamp of the detection event.")
     location: dict = Field(
         ...,
@@ -69,7 +71,7 @@ class PotholeLog(BaseModel):
     latitude: float
     longitude: float
     detections: List[PotholeDetection]
-    severity: str = Field(..., description="'Normal' | 'High' | 'Critical'")
+    severity: str = Field(..., description="'Normal' | 'Low' | 'Moderate' | 'High' | 'Critical'")
     timestamp: datetime
 
     model_config = {"populate_by_name": True}

@@ -5,6 +5,7 @@ import L from "leaflet";
 import "leaflet.heat";
 import { formatDistanceToNow } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
+import { generateWorkOrderPDF } from "../lib/WorkOrderPDF";
 
 // Fix Leaflet default markers in Vite
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -14,14 +15,16 @@ L.Icon.Default.mergeOptions({
   shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
+// ── Marker Icons ─────────────────────────────────────────────────────────────
 const getMarkerIcon = (severity: string) => {
   let color = "#ef4444"; // Default to red
-  if (/critical|high/i.test(severity)) color = "#ef4444"; // Red
-  else if (/medium/i.test(severity)) color = "#eab308"; // Yellow
-  else if (/low/i.test(severity)) color = "#9ca3af"; // Gray
-  else if (/normal/i.test(severity)) color = "#22c55e"; // Green
+  if (/critical/i.test(severity)) color = "#dc2626";   // Red-600
+  else if (/high/i.test(severity)) color = "#f97316";   // Orange-500
+  else if (/moderate/i.test(severity)) color = "#eab308"; // Yellow-500
+  else if (/low/i.test(severity)) color = "#9ca3af";     // Gray-400
+  else if (/normal/i.test(severity)) color = "#22c55e";   // Green
 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32" height="32"><path fill="${color}" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/><circle fill="${color === '#eab308' || color === '#22c55e' ? 'black' : 'white'}" cx="12" cy="9" r="2.5"/></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32" height="32"><path fill="${color}" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/><circle fill="${['#eab308', '#22c55e'].includes(color) ? 'black' : 'white'}" cx="12" cy="9" r="2.5"/></svg>`;
 
   return L.divIcon({
     className: "custom-svg-icon",
@@ -32,6 +35,7 @@ const getMarkerIcon = (severity: string) => {
   });
 };
 
+// ── Types ────────────────────────────────────────────────────────────────────
 interface Detection {
   bbox: number[];
   confidence: number;
@@ -47,59 +51,136 @@ interface MongoPothole {
   detections: Detection[];
 }
 
-function HeatmapLayer({ points }: { points: [number, number, number][] }) {
+type SeverityTab = "Critical" | "High" | "Moderate" | "Low";
+type MapMode = "markers" | "heatmap";
+
+const SEVERITY_TABS: { key: SeverityTab; label: string; color: string; dot: string; bg: string; border: string; text: string; estSpan: string }[] = [
+  { key: "Critical", label: "Critical", color: "bg-red-600", dot: "bg-red-500", bg: "bg-red-500/10", border: "border-red-500/30", text: "text-red-500", estSpan: "> 500mm" },
+  { key: "High", label: "High", color: "bg-orange-500", dot: "bg-orange-500", bg: "bg-orange-500/10", border: "border-orange-500/30", text: "text-orange-500", estSpan: "100–400mm" },
+  { key: "Moderate", label: "Moderate", color: "bg-yellow-400", dot: "bg-yellow-400", bg: "bg-yellow-400/10", border: "border-yellow-400/30", text: "text-yellow-400", estSpan: "50–100mm" },
+  { key: "Low", label: "Low", color: "bg-gray-400", dot: "bg-gray-400", bg: "bg-gray-400/10", border: "border-gray-400/30", text: "text-gray-400", estSpan: "< 50mm" },
+];
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function getSeverityStyle(sev: string) {
+  if (/critical/i.test(sev)) return { text: "text-red-500", border: "border-red-500/30", bg: "bg-red-500/10", dot: "bg-red-500" };
+  if (/high/i.test(sev)) return { text: "text-orange-500", border: "border-orange-500/30", bg: "bg-orange-500/10", dot: "bg-orange-500" };
+  if (/moderate/i.test(sev)) return { text: "text-yellow-400", border: "border-yellow-400/30", bg: "bg-yellow-400/10", dot: "bg-yellow-400" };
+  if (/low/i.test(sev)) return { text: "text-gray-400", border: "border-gray-400/30", bg: "bg-gray-400/10", dot: "bg-gray-400" };
+  return { text: "text-green-500", border: "border-green-500/30", bg: "bg-green-500/10", dot: "bg-green-500" };
+}
+
+function getEstSpan(severity: string): string {
+  if (/critical/i.test(severity)) return "> 500mm";
+  if (/high/i.test(severity)) return "100–400mm";
+  if (/moderate/i.test(severity)) return "50–100mm";
+  return "< 50mm";
+}
+
+const formatDateIST = (dateStr: string) => {
+  let parseableStr = dateStr;
+  if (!parseableStr.endsWith("Z") && !parseableStr.includes("+")) {
+    parseableStr = parseableStr.replace(" ", "T");
+    if (!parseableStr.includes("Z")) parseableStr += "Z";
+  }
+  const date = new Date(parseableStr);
+  const timeStr = new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: true,
+  }).format(date).toUpperCase();
+  const dateStrFormatted = new Intl.DateTimeFormat("en-IN", {
+    timeZone: "Asia/Kolkata", day: "2-digit", month: "long",
+  }).format(date);
+  return `${timeStr}, ${dateStrFormatted}`;
+};
+
+// ── PCI Calculation ──────────────────────────────────────────────────────────
+function calculatePCI(potholes: MongoPothole[]): number {
+  let score = 100;
+  for (const p of potholes) {
+    if (/critical/i.test(p.severity)) score -= 15;
+    else if (/high/i.test(p.severity)) score -= 10;
+    else if (/moderate/i.test(p.severity)) score -= 5;
+    else if (/low/i.test(p.severity)) score -= 2;
+  }
+  return Math.max(0, score);
+}
+
+function getPCIColor(score: number): string {
+  if (score >= 85) return "#22c55e";
+  if (score >= 55) return "#eab308";
+  return "#ef4444";
+}
+
+function getPCILabel(score: number): string {
+  if (score >= 85) return "Good";
+  if (score >= 55) return "Fair";
+  return "Poor";
+}
+
+// ── PCI Gauge Component ──────────────────────────────────────────────────────
+function PCIGauge({ score }: { score: number }) {
+  const color = getPCIColor(score);
+  const label = getPCILabel(score);
+  // SVG arc gauge — 180 degrees
+  const radius = 38;
+  const strokeWidth = 7;
+  const cx = 50;
+  const circumference = Math.PI * radius; // half circle
+  const progress = Math.max(0, Math.min(100, score)) / 100;
+  const dashOffset = circumference * (1 - progress);
+
+  return (
+    <div className="flex flex-col items-center gap-0.5" title={`PCI: ${score}/100 — ${label}`}>
+      <svg width="72" height="44" viewBox="0 0 100 56" className="overflow-visible">
+        {/* Background arc */}
+        <path
+          d="M 12 50 A 38 38 0 0 1 88 50"
+          fill="none"
+          stroke="rgba(255,255,255,0.08)"
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+        />
+        {/* Filled arc */}
+        <motion.path
+          d="M 12 50 A 38 38 0 0 1 88 50"
+          fill="none"
+          stroke={color}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          initial={{ strokeDashoffset: circumference }}
+          animate={{ strokeDashoffset: dashOffset }}
+          transition={{ duration: 1.5, ease: [0.16, 1, 0.3, 1], delay: 0.3 }}
+        />
+        {/* Score text */}
+        <text x={cx} y={46} textAnchor="middle" fill={color} fontSize="18" fontWeight="bold" fontFamily="Space Grotesk, sans-serif">
+          {score}
+        </text>
+      </svg>
+      <div className="text-[8px] uppercase tracking-widest font-bold" style={{ color }}>
+        PCI — {label}
+      </div>
+    </div>
+  );
+}
+
+// ── Heatmap Layer ────────────────────────────────────────────────────────────
+function HeatmapLayer({ points, visible }: { points: [number, number, number][]; visible: boolean }) {
   const map = useMap();
   useEffect(() => {
-    if (!map || points.length === 0) return;
+    if (!map || points.length === 0 || !visible) return;
     // @ts-ignore
     const heat = L.heatLayer(points, {
       radius: 35, blur: 25, maxZoom: 17,
       gradient: { 0.4: "#6c1ecd", 0.65: "#d6baff", 0.85: "#ffb4ab", 1.0: "#93000a" },
     }).addTo(map);
     return () => { map.removeLayer(heat); };
-  }, [map, points]);
+  }, [map, points, visible]);
   return null;
 }
 
-function getSeverityStyle(sev: string) {
-  if (/critical|high/i.test(sev)) {
-    return { text: "text-red-500", border: "border-red-500/30", bg: "bg-red-500/10", dot: "bg-red-500" };
-  } else if (/medium/i.test(sev)) {
-    return { text: "text-yellow-500", border: "border-yellow-500/30", bg: "bg-yellow-500/10", dot: "bg-yellow-500" };
-  } else if (/low/i.test(sev)) {
-    return { text: "text-gray-400", border: "border-gray-400/30", bg: "bg-gray-400/10", dot: "bg-gray-400" };
-  } else {
-    return { text: "text-green-500", border: "border-green-500/30", bg: "bg-green-500/10", dot: "bg-green-500" };
-  }
-}
-
-const formatDateIST = (dateStr: string) => {
-  // Ensure the date is interpreted as UTC by appending 'Z' if it's missing
-  // standard ISO formatting properties.
-  let parseableStr = dateStr;
-  if (!parseableStr.endsWith("Z") && !parseableStr.includes("+")) {
-    parseableStr = parseableStr.replace(" ", "T");
-    if (!parseableStr.includes("Z")) {
-      parseableStr += "Z";
-    }
-  }
-
-  const date = new Date(parseableStr);
-  const timeStr = new Intl.DateTimeFormat("en-IN", {
-    timeZone: "Asia/Kolkata",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  }).format(date).toUpperCase();
-  const dateStrFormatted = new Intl.DateTimeFormat("en-IN", {
-    timeZone: "Asia/Kolkata",
-    day: "2-digit",
-    month: "long",
-  }).format(date);
-  return `${timeStr}, ${dateStrFormatted}`;
-};
-
-function MapSyncHandler({ selected, potholes }: { selected: string | null, potholes: MongoPothole[] }) {
+// ── Map Sync Handler ─────────────────────────────────────────────────────────
+function MapSyncHandler({ selected, potholes }: { selected: string | null; potholes: MongoPothole[] }) {
   const map = useMap();
   useEffect(() => {
     if (selected) {
@@ -112,13 +193,11 @@ function MapSyncHandler({ selected, potholes }: { selected: string | null, potho
   return null;
 }
 
-function PotholeMarker({ p, isSelected }: { p: MongoPothole, isSelected: boolean }) {
+// ── Single Marker ────────────────────────────────────────────────────────────
+function PotholeMarker({ p, isSelected }: { p: MongoPothole; isSelected: boolean }) {
   const markerRef = useRef<L.Marker>(null);
-
   useEffect(() => {
-    if (isSelected && markerRef.current) {
-      markerRef.current.openPopup();
-    }
+    if (isSelected && markerRef.current) markerRef.current.openPopup();
   }, [isSelected]);
 
   return (
@@ -134,6 +213,39 @@ function PotholeMarker({ p, isSelected }: { p: MongoPothole, isSelected: boolean
   );
 }
 
+// ── Map Mode Toggle ──────────────────────────────────────────────────────────
+function MapModeToggle({ mode, onChange }: { mode: MapMode; onChange: (m: MapMode) => void }) {
+  return (
+    <div className="absolute top-4 right-4 z-[1000] glass-panel rounded-xl border border-outline-variant/20 p-1 flex gap-1 shadow-xl">
+      <button
+        onClick={() => onChange("markers")}
+        className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 ${
+          mode === "markers"
+            ? "bg-primary/20 text-primary border border-primary/30"
+            : "text-on-surface-variant/50 hover:text-on-surface-variant"
+        }`}
+      >
+        <span className="material-symbols-outlined text-sm">pin_drop</span>
+        Markers
+      </button>
+      <button
+        onClick={() => onChange("heatmap")}
+        className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 ${
+          mode === "heatmap"
+            ? "bg-primary/20 text-primary border border-primary/30"
+            : "text-on-surface-variant/50 hover:text-on-surface-variant"
+        }`}
+      >
+        <span className="material-symbols-outlined text-sm">thermostat</span>
+        Heatmap
+      </button>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ██  MAP PAGE
+// ═══════════════════════════════════════════════════════════════════════════════
 export default function MapPage() {
   const [potholes, setPotholes] = useState<MongoPothole[]>([]);
   const [loading, setLoading] = useState(true);
@@ -142,6 +254,11 @@ export default function MapPage() {
   const [modalPothole, setModalPothole] = useState<MongoPothole | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [isZoomed, setIsZoomed] = useState(false);
+
+  // New state
+  const [activeTab, setActiveTab] = useState<SeverityTab>("Critical");
+  const [mapMode, setMapMode] = useState<MapMode>("markers");
+  const [generatingPDF, setGeneratingPDF] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -160,19 +277,47 @@ export default function MapPage() {
 
   useEffect(() => { fetchData(); }, [fetchData, retryCount]);
 
+  // ── Derived data ────────────────────────────────────────────────────────────
   const heatPoints: [number, number, number][] = potholes.map((p) => [
     p.latitude,
     p.longitude,
-    /critical|high/i.test(p.severity) ? 50 : /medium/i.test(p.severity) ? 35 : /low/i.test(p.severity) ? 25 : 15,
+    /critical/i.test(p.severity) ? 60 : /high/i.test(p.severity) ? 45 : /moderate/i.test(p.severity) ? 30 : 15,
   ]);
 
-  const highCount = potholes.filter((p) => /critical|high/i.test(p.severity)).length;
-  const mediumCount = potholes.filter((p) => /medium/i.test(p.severity)).length;
-  const lowCount = potholes.filter((p) => /low/i.test(p.severity)).length;
+  const criticalCount = potholes.filter(p => /critical/i.test(p.severity)).length;
+  const highCount = potholes.filter(p => /high/i.test(p.severity)).length;
+  const moderateCount = potholes.filter(p => /moderate/i.test(p.severity)).length;
+  const lowCount = potholes.filter(p => /low/i.test(p.severity)).length;
+
+  const tabCounts: Record<SeverityTab, number> = {
+    Critical: criticalCount,
+    High: highCount,
+    Moderate: moderateCount,
+    Low: lowCount,
+  };
+
+  const filteredPotholes = potholes.filter(p => {
+    const regex = new RegExp(activeTab, "i");
+    return regex.test(p.severity);
+  });
+
+  const pciScore = calculatePCI(potholes);
 
   const handleLogClick = (p: MongoPothole) => {
     setSelected(p._id);
     setModalPothole(p);
+  };
+
+  const handleGeneratePDF = async (p: MongoPothole, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setGeneratingPDF(p._id);
+    try {
+      await generateWorkOrderPDF(p, pciScore);
+    } catch (err) {
+      console.error("PDF generation failed:", err);
+    } finally {
+      setGeneratingPDF(null);
+    }
   };
 
   return (
@@ -190,19 +335,30 @@ export default function MapPage() {
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
+          {/* PCI Gauge */}
+          {!loading && !error && potholes.length > 0 && (
+            <PCIGauge score={pciScore} />
+          )}
+
           {/* Stats pills */}
           {!loading && !error && (
             <>
-              {highCount > 0 && (
+              {criticalCount > 0 && (
                 <div className="flex items-center gap-1.5 text-[10px] font-bold text-red-500 bg-red-500/10 border border-red-500/20 px-2.5 py-1 rounded-full">
                   <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                  {criticalCount} Critical
+                </div>
+              )}
+              {highCount > 0 && (
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-orange-500 bg-orange-500/10 border border-orange-500/20 px-2.5 py-1 rounded-full">
+                  <span className="w-1.5 h-1.5 rounded-full bg-orange-500" />
                   {highCount} High
                 </div>
               )}
-              {mediumCount > 0 && (
-                <div className="flex items-center gap-1.5 text-[10px] font-bold text-yellow-500 bg-yellow-500/10 border border-yellow-500/20 px-2.5 py-1 rounded-full">
-                  <span className="w-1.5 h-1.5 rounded-full bg-yellow-500" />
-                  {mediumCount} Medium
+              {moderateCount > 0 && (
+                <div className="flex items-center gap-1.5 text-[10px] font-bold text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 px-2.5 py-1 rounded-full">
+                  <span className="w-1.5 h-1.5 rounded-full bg-yellow-400" />
+                  {moderateCount} Moderate
                 </div>
               )}
               {lowCount > 0 && (
@@ -237,22 +393,25 @@ export default function MapPage() {
         {/* ── Map ── */}
         <div className="w-full h-[50vh] md:h-full md:flex-1 relative border-b md:border-b-0 md:border-r border-outline-variant/10">
           {!loading && (
-            <MapContainer
-              center={[26.4499, 80.3319]}
-              zoom={13}
-              className="w-full h-full absolute inset-0"
-              zoomControl={false}
-            >
-              <TileLayer
-                attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
-                url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-              />
-              <MapSyncHandler selected={selected} potholes={potholes} />
-              <HeatmapLayer points={heatPoints} />
-              {potholes.map((p) => (
-                <PotholeMarker key={p._id} p={p} isSelected={selected === p._id} />
-              ))}
-            </MapContainer>
+            <>
+              <MapContainer
+                center={[26.4499, 80.3319]}
+                zoom={13}
+                className="w-full h-full absolute inset-0"
+                zoomControl={false}
+              >
+                <TileLayer
+                  attribution='&copy; <a href="https://carto.com/attributions">CARTO</a>'
+                  url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                />
+                <MapSyncHandler selected={selected} potholes={potholes} />
+                <HeatmapLayer points={heatPoints} visible={mapMode === "heatmap"} />
+                {mapMode === "markers" && potholes.map((p) => (
+                  <PotholeMarker key={p._id} p={p} isSelected={selected === p._id} />
+                ))}
+              </MapContainer>
+              <MapModeToggle mode={mapMode} onChange={setMapMode} />
+            </>
           )}
 
           {loading && (
@@ -265,8 +424,9 @@ export default function MapPage() {
           )}
         </div>
 
-        {/* ── Sidebar Feed ── */}
-        <div className="w-full md:w-[380px] bg-[#0c0c0e] flex flex-col md:overflow-y-auto shrink-0 z-10">
+        {/* ── Sidebar Feed (Tabbed) ── */}
+        <div className="w-full md:w-[400px] bg-[#0c0c0e] flex flex-col md:overflow-y-auto shrink-0 z-10">
+          {/* Sidebar Header */}
           <div className="p-5 border-b border-outline-variant/5 sticky top-0 bg-[#0c0c0e]/95 backdrop-blur-md z-10">
             <h2 className="font-headline font-bold text-base text-[#E5E1E4] flex items-center gap-2">
               <span className="material-symbols-outlined text-primary text-lg">database</span>
@@ -277,10 +437,38 @@ export default function MapPage() {
                 </span>
               )}
             </h2>
+
+            {/* ── Severity Tabs ── */}
+            {!loading && !error && potholes.length > 0 && (
+              <div className="flex gap-1 mt-3">
+                {SEVERITY_TABS.map(tab => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key)}
+                    className={`flex-1 px-2 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1 ${
+                      activeTab === tab.key
+                        ? `${tab.bg} ${tab.text} ${tab.border} border`
+                        : "text-on-surface-variant/40 hover:text-on-surface-variant/60 border border-transparent"
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${activeTab === tab.key ? tab.dot : "bg-on-surface-variant/20"}`} />
+                    {tab.label}
+                    {tabCounts[tab.key] > 0 && (
+                      <span className={`ml-0.5 text-[8px] px-1 py-0 rounded-full ${
+                        activeTab === tab.key ? `${tab.bg} ${tab.text}` : "bg-surface-container-high text-on-surface-variant/40"
+                      }`}>
+                        {tabCounts[tab.key]}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
+          {/* ── Tab Content ── */}
           <div className="p-4 space-y-2.5 flex-1 shadow-inner">
-            <AnimatePresence>
+            <AnimatePresence mode="popLayout">
               {loading ? (
                 [1, 2, 3, 4].map((i) => (
                   <div key={i} className="animate-pulse bg-surface-container-low rounded-2xl h-[88px]" />
@@ -299,24 +487,28 @@ export default function MapPage() {
                     Retry Connection
                   </button>
                 </motion.div>
-              ) : potholes.length === 0 ? (
+              ) : filteredPotholes.length === 0 ? (
                 <motion.div
+                  key={`empty-${activeTab}`}
                   initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                   className="flex flex-col items-center justify-center py-16 gap-3 text-on-surface-variant/40"
                 >
                   <span className="material-symbols-outlined text-5xl">info</span>
-                  <p className="text-xs">No hazards logged in the current grid.</p>
+                  <p className="text-xs">No {activeTab.toLowerCase()} severity hazards in the current grid.</p>
                 </motion.div>
               ) : (
-                potholes.map((p, i) => {
+                filteredPotholes.map((p, i) => {
                   const s = getSeverityStyle(p.severity);
                   const isSelected = selected === p._id;
+                  const isGenerating = generatingPDF === p._id;
                   return (
                     <motion.div
                       key={p._id}
+                      layout
                       initial={{ opacity: 0, y: 16 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.4, delay: Math.min(i * 0.05, 0.3) }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      transition={{ duration: 0.4, delay: Math.min(i * 0.04, 0.2) }}
                       onClick={() => handleLogClick(p)}
                       className={`glass-panel p-3 rounded-2xl border transition-all cursor-pointer group flex gap-3 relative ${isSelected ? `${s.border} ${s.bg}` : "border-outline-variant/10 hover:border-primary/30"
                         }`}
@@ -346,19 +538,38 @@ export default function MapPage() {
                             {formatDateIST(p.timestamp)}
                           </span>
                         </div>
-                        <div className="text-[10px] font-mono text-on-surface-variant/60 flex items-center gap-0.5 mt-1">
-                          <span className="material-symbols-outlined text-[10px]">location_on</span>
-                          {p.latitude.toFixed(4)}, {p.longitude.toFixed(4)}
+                        <div className="flex items-center justify-between mt-1">
+                          <div className="text-[10px] font-mono text-on-surface-variant/60 flex items-center gap-0.5">
+                            <span className="material-symbols-outlined text-[10px]">location_on</span>
+                            {p.latitude.toFixed(4)}, {p.longitude.toFixed(4)}
+                          </div>
+                          <div className={`text-[8px] font-bold ${s.text} uppercase`}>
+                            Est. {getEstSpan(p.severity)}
+                          </div>
                         </div>
                         <div className="flex items-center gap-2 mt-1.5">
                           <span className="text-[9px] text-on-surface-variant/40 font-mono">
                             ID: {p._id.slice(-6).toUpperCase()}
                           </span>
-                          <div className="flex gap-0.5 ml-auto">
+                          <div className="flex gap-0.5">
                             {p.detections.slice(0, 5).map((_, j) => (
                               <div key={j} className={`w-1.5 h-1.5 rounded-full ${s.dot} opacity-60`} />
                             ))}
                           </div>
+                          {/* PDF Button */}
+                          <button
+                            onClick={(e) => handleGeneratePDF(p, e)}
+                            disabled={isGenerating}
+                            className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-wider border border-outline-variant/20 text-on-surface-variant/50 hover:text-primary hover:border-primary/30 hover:bg-primary/5 transition-all disabled:opacity-40"
+                            title="Generate Work Order PDF"
+                          >
+                            {isGenerating ? (
+                              <div className="w-2.5 h-2.5 border border-primary/30 border-t-primary rounded-full animate-spin" />
+                            ) : (
+                              <span className="material-symbols-outlined text-[11px]">description</span>
+                            )}
+                            PDF
+                          </button>
                         </div>
                       </div>
                     </motion.div>
@@ -386,7 +597,7 @@ export default function MapPage() {
               exit={{ scale: 0.95, y: -20, opacity: 0 }}
               transition={{ type: "spring", bounce: 0.3, duration: 0.5 }}
               className="bg-[#0C0C0E] border border-outline-variant/20 rounded-3xl overflow-hidden w-full max-w-4xl shadow-2xl flex flex-col md:flex-row relative"
-              onClick={(e) => e.stopPropagation()} // stop close on inner click
+              onClick={(e) => e.stopPropagation()}
             >
               {/* Close Button */}
               <button
@@ -442,6 +653,24 @@ export default function MapPage() {
                       </div>
                     </div>
 
+                    {/* Est. Physical Span */}
+                    <div className="bg-surface-container rounded-2xl p-4 border border-outline-variant/10">
+                      <div className="text-xs text-on-surface-variant/50 uppercase tracking-wider mb-1">Estimated Physical Span</div>
+                      <div className="text-base font-medium text-[#E5E1E4] flex items-center gap-2">
+                        <span className="material-symbols-outlined text-lg text-on-surface-variant/60">straighten</span>
+                        {getEstSpan(modalPothole.severity)}
+                      </div>
+                    </div>
+
+                    {/* PCI Context */}
+                    <div className="bg-surface-container rounded-2xl p-4 border border-outline-variant/10">
+                      <div className="text-xs text-on-surface-variant/50 uppercase tracking-wider mb-1">Pavement Condition Index</div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl font-headline font-bold" style={{ color: getPCIColor(pciScore) }}>{pciScore}</span>
+                        <span className="text-xs font-bold uppercase" style={{ color: getPCIColor(pciScore) }}>{getPCILabel(pciScore)}</span>
+                      </div>
+                    </div>
+
                     {/* Timestamp */}
                     <div className="bg-surface-container rounded-2xl p-4 border border-outline-variant/10">
                       <div className="text-xs text-on-surface-variant/50 uppercase tracking-wider mb-1">Timestamp (IST)</div>
@@ -462,12 +691,22 @@ export default function MapPage() {
                   </div>
                 </div>
 
-                <div className="mt-8 pt-4 border-t border-outline-variant/10 flex items-center justify-between text-xs text-on-surface-variant/50 font-mono">
-                  <span>Record ID: {modalPothole._id.slice(-6).toUpperCase()}</span>
-                  <span className="flex items-center gap-1">
-                    <span className="material-symbols-outlined text-[14px]">memory</span>
-                    Analysis Complete
-                  </span>
+                <div className="mt-8 pt-4 border-t border-outline-variant/10 space-y-3">
+                  {/* Generate Work Order Button in Modal */}
+                  <button
+                    onClick={() => generateWorkOrderPDF(modalPothole, pciScore)}
+                    className="w-full btn-gradient py-3 rounded-xl font-headline font-bold text-[#0D0D0F] flex items-center justify-center gap-2 text-sm"
+                  >
+                    <span className="material-symbols-outlined text-lg">description</span>
+                    Generate Work Order PDF
+                  </button>
+                  <div className="flex items-center justify-between text-xs text-on-surface-variant/50 font-mono">
+                    <span>Record ID: {modalPothole._id.slice(-6).toUpperCase()}</span>
+                    <span className="flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[14px]">memory</span>
+                      Analysis Complete
+                    </span>
+                  </div>
                 </div>
               </div>
             </motion.div>
