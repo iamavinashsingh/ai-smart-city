@@ -45,7 +45,9 @@ Interfaces seamlessly with MongoDB Atlas via the `motor` asynchronous driver. It
 
 ### 1. Detect Pothole
 **`POST /api/v1/detect`**
-Executes an edge-to-cloud inference pipeline: receives a captured road image, detects potholes via YOLOv12, uploads the resulting image to Cloudinary, logs geospatial data to MongoDB, and returns a fully structured payload.
+Executes an edge-to-cloud inference pipeline: receives a captured road image, detects potholes via YOLOv12, and calculates a dynamic severity tier (Critical, High, Moderate, Low, Normal) based on combined detection frequency and bounding box area ratios. 
+
+If the road is categorized as **Normal** (zero detections), the API gracefully returns early to minimize Cloudinary bandwith and MongoDB storage footprints. Otherwise, the image is passed to an OpenCV utility that draws accurate glowing bounding boxes across detections before uploading the localized capture to Cloudinary. Finally, the system logs geospatial data to MongoDB, and returns a fully structured payload.
 
 - **Content-Type**: `multipart/form-data`
 - **Payload Requirements**:
@@ -56,7 +58,7 @@ Executes an edge-to-cloud inference pipeline: receives a captured road image, de
 ```json
 {
   "success": true,
-  "message": "Detected 2 pothole(s). Severity: High.",
+  "message": "Detected 2 pothole(s). Severity: Moderate.",
   "image_url": "https://res.cloudinary.com/...",
   "detections": [
     {
@@ -64,7 +66,9 @@ Executes an edge-to-cloud inference pipeline: receives a captured road image, de
       "confidence": 0.89
     }
   ],
-  "timestamp": "2026-04-05T12:00:00Z",
+  "severity": "Moderate",
+  "max_pothole_ratio": 0.08,
+  "timestamp": "2026-04-16T12:00:00Z",
   "location": {"lat": 40.7128, "lng": -74.0060}
 }
 ```
@@ -102,7 +106,7 @@ Root greeting with link reference to Swagger documentation.
 
 Defined in `requirements.txt`. The application stack leverages:
 - **Core Server**: `fastapi` & `uvicorn[standard]` (High-performance API framework and ASGI server)
-- **AI / Computer Vision**: `ultralytics>=8.3.71`, `opencv-python-headless`, `pillow`
+- **AI / Computer Vision**: `ultralytics>=8.3.71`, `opencv-python-headless`, `pillow`, `numpy`
 - **Cloud / Storage Layer**: `cloudinary`
 - **Persistence**: `motor`, `pymongo` (Async driver for MongoDB Atlas)
 - **Ecosystem Tooling**: `pydantic-settings`, `python-dotenv`, `python-multipart`
