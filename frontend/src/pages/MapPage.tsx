@@ -588,7 +588,7 @@ export default function MapPage() {
             initial={{ opacity: 0, backdropFilter: "blur(0px)" }}
             animate={{ opacity: 1, backdropFilter: "blur(8px)" }}
             exit={{ opacity: 0, backdropFilter: "blur(0px)" }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-[#08080A]/60 p-4 sm:p-6 md:p-12"
+            className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#08080A]/80 p-3 sm:p-6 md:p-12"
             onClick={() => setModalPothole(null)}
           >
             <motion.div
@@ -596,7 +596,7 @@ export default function MapPage() {
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.95, y: -20, opacity: 0 }}
               transition={{ type: "spring", bounce: 0.3, duration: 0.5 }}
-              className="bg-[#0C0C0E] border border-outline-variant/20 rounded-3xl overflow-hidden w-full max-w-4xl shadow-2xl flex flex-col md:flex-row relative"
+              className="bg-[#0C0C0E] border border-outline-variant/20 rounded-2xl md:rounded-3xl overflow-hidden w-full max-w-5xl max-h-[100%] md:max-h-[90vh] shadow-2xl flex flex-col md:flex-row relative"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Close Button */}
@@ -612,7 +612,7 @@ export default function MapPage() {
 
               {/* Image Section */}
               <div
-                className="w-full md:w-[60%] lg:w-[65%] h-[40vh] md:h-[70vh] bg-black relative cursor-zoom-in overflow-hidden group"
+                className="w-full md:w-[50%] lg:w-[55%] shrink-0 h-[35vh] md:h-auto min-h-[300px] bg-black relative cursor-zoom-in overflow-hidden group flex items-center"
                 onClick={() => setIsZoomed(!isZoomed)}
               >
                 <motion.img
@@ -633,77 +633,77 @@ export default function MapPage() {
               </div>
 
               {/* Details Section */}
-              <div className="flex-1 p-6 md:p-8 flex flex-col justify-between overflow-y-auto">
-                <div className="space-y-6">
+              <div className="flex-1 p-5 md:p-8 flex flex-col justify-between overflow-y-auto">
+                <div className="space-y-5">
                   <div>
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="material-symbols-outlined text-primary">analytics</span>
-                      <h3 className="text-sm font-bold text-on-surface-variant/80 uppercase tracking-widest font-label">Hazard Log</h3>
+                      <span className="material-symbols-outlined text-primary text-sm">analytics</span>
+                      <h3 className="text-xs font-bold text-on-surface-variant/80 uppercase tracking-widest font-label">Hazard Log</h3>
                     </div>
-                    <h2 className="text-3xl font-headline font-bold text-[#E5E1E4]">Detection Details</h2>
+                    <h2 className="text-2xl md:text-3xl font-headline font-bold text-[#E5E1E4]">Detection Details</h2>
                   </div>
 
-                  <div className="space-y-4">
+                  <div className="grid grid-cols-1 gap-3">
                     {/* Severity */}
-                    <div className="bg-surface-container rounded-2xl p-4 border border-outline-variant/10">
-                      <div className="text-xs text-on-surface-variant/50 uppercase tracking-wider mb-1">Assigned Severity</div>
-                      <div className="text-lg font-bold flex items-center gap-2">
-                        <span className={`w-3 h-3 rounded-full ${getSeverityStyle(modalPothole.severity).dot} animate-pulse`} />
+                    <div className="bg-surface-container rounded-2xl p-3 md:p-4 border border-outline-variant/10">
+                      <div className="text-[10px] md:text-xs text-on-surface-variant/50 uppercase tracking-wider mb-1">Assigned Severity</div>
+                      <div className="text-base md:text-lg font-bold flex items-center gap-2">
+                        <span className={`w-2.5 h-2.5 md:w-3 md:h-3 rounded-full ${getSeverityStyle(modalPothole.severity).dot} animate-pulse`} />
                         <span className={getSeverityStyle(modalPothole.severity).text}>{modalPothole.severity}</span>
                       </div>
                     </div>
 
                     {/* Est. Physical Span */}
-                    <div className="bg-surface-container rounded-2xl p-4 border border-outline-variant/10">
-                      <div className="text-xs text-on-surface-variant/50 uppercase tracking-wider mb-1">Estimated Physical Span</div>
-                      <div className="text-base font-medium text-[#E5E1E4] flex items-center gap-2">
-                        <span className="material-symbols-outlined text-lg text-on-surface-variant/60">straighten</span>
+                    <div className="bg-surface-container rounded-2xl p-3 md:p-4 border border-outline-variant/10">
+                      <div className="text-[10px] md:text-xs text-on-surface-variant/50 uppercase tracking-wider mb-1">Estimated Physical Span</div>
+                      <div className="text-sm md:text-base font-medium text-[#E5E1E4] flex items-center gap-2">
+                        <span className="material-symbols-outlined text-base md:text-lg text-on-surface-variant/60">straighten</span>
                         {getEstSpan(modalPothole.severity)}
                       </div>
                     </div>
 
                     {/* PCI Context */}
-                    <div className="bg-surface-container rounded-2xl p-4 border border-outline-variant/10">
-                      <div className="text-xs text-on-surface-variant/50 uppercase tracking-wider mb-1">Pavement Condition Index</div>
+                    <div className="bg-surface-container rounded-2xl p-3 md:p-4 border border-outline-variant/10">
+                      <div className="text-[10px] md:text-xs text-on-surface-variant/50 uppercase tracking-wider mb-1">Pavement Condition Index</div>
                       <div className="flex items-center gap-3">
-                        <span className="text-2xl font-headline font-bold" style={{ color: getPCIColor(pciScore) }}>{pciScore}</span>
-                        <span className="text-xs font-bold uppercase" style={{ color: getPCIColor(pciScore) }}>{getPCILabel(pciScore)}</span>
+                        <span className="text-xl md:text-2xl font-headline font-bold" style={{ color: getPCIColor(pciScore) }}>{pciScore}</span>
+                        <span className="text-[10px] md:text-xs font-bold uppercase" style={{ color: getPCIColor(pciScore) }}>{getPCILabel(pciScore)}</span>
                       </div>
                     </div>
 
                     {/* Timestamp */}
-                    <div className="bg-surface-container rounded-2xl p-4 border border-outline-variant/10">
-                      <div className="text-xs text-on-surface-variant/50 uppercase tracking-wider mb-1">Timestamp (IST)</div>
-                      <div className="text-base font-medium text-[#E5E1E4] flex items-center gap-2">
-                        <span className="material-symbols-outlined text-lg text-on-surface-variant/60">schedule</span>
+                    <div className="bg-surface-container rounded-2xl p-3 md:p-4 border border-outline-variant/10">
+                      <div className="text-[10px] md:text-xs text-on-surface-variant/50 uppercase tracking-wider mb-1">Timestamp (IST)</div>
+                      <div className="text-sm md:text-base font-medium text-[#E5E1E4] flex items-center gap-2">
+                        <span className="material-symbols-outlined text-base md:text-lg text-on-surface-variant/60">schedule</span>
                         {formatDateIST(modalPothole.timestamp)}
                       </div>
                     </div>
 
                     {/* Location */}
-                    <div className="bg-surface-container rounded-2xl p-4 border border-outline-variant/10">
-                      <div className="text-xs text-on-surface-variant/50 uppercase tracking-wider mb-1">Exact Coordinates</div>
-                      <div className="text-base font-mono text-primary flex items-center gap-2 bg-[#0c0c0e] p-2 rounded-lg mt-1 border border-primary/20">
-                        <span className="material-symbols-outlined text-lg">pin_drop</span>
-                        {modalPothole.latitude.toFixed(6)}, {modalPothole.longitude.toFixed(6)}
+                    <div className="bg-surface-container rounded-2xl p-3 md:p-4 border border-outline-variant/10">
+                      <div className="text-[10px] md:text-xs text-on-surface-variant/50 uppercase tracking-wider mb-1">Exact Coordinates</div>
+                      <div className="text-sm md:text-base font-mono text-primary flex items-center gap-2 bg-[#0c0c0e] p-2 rounded-lg mt-1 border border-primary/20">
+                        <span className="material-symbols-outlined text-base md:text-lg">pin_drop</span>
+                        <span className="break-all">{modalPothole.latitude.toFixed(6)}, {modalPothole.longitude.toFixed(6)}</span>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                <div className="mt-8 pt-4 border-t border-outline-variant/10 space-y-3">
+                <div className="mt-5 md:mt-8 pt-4 border-t border-outline-variant/10 space-y-3 shrink-0">
                   {/* Generate Work Order Button in Modal */}
                   <button
                     onClick={() => generateWorkOrderPDF(modalPothole, pciScore)}
-                    className="w-full btn-gradient py-3 rounded-xl font-headline font-bold text-[#0D0D0F] flex items-center justify-center gap-2 text-sm"
+                    className="w-full btn-gradient py-2.5 md:py-3 rounded-xl font-headline font-bold text-[#0D0D0F] flex items-center justify-center gap-2 text-sm transition-transform active:scale-95"
                   >
                     <span className="material-symbols-outlined text-lg">description</span>
                     Generate Work Order PDF
                   </button>
-                  <div className="flex items-center justify-between text-xs text-on-surface-variant/50 font-mono">
-                    <span>Record ID: {modalPothole._id.slice(-6).toUpperCase()}</span>
+                  <div className="flex items-center justify-between text-[10px] md:text-xs text-on-surface-variant/50 font-mono">
+                    <span>ID: {modalPothole._id.slice(-6).toUpperCase()}</span>
                     <span className="flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[14px]">memory</span>
+                      <span className="material-symbols-outlined text-[12px] md:text-[14px]">memory</span>
                       Analysis Complete
                     </span>
                   </div>
